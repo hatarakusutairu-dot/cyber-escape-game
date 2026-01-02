@@ -1,0 +1,2566 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>サイバー研究所 脱出ゲーム</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    @keyframes marquee {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-200%); }
+    }
+    .animate-marquee {
+      animation: marquee 12s linear infinite;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+const CyberEscapeGame = () => {
+  const [screen, setScreen] = useState('entry');
+  const [teamName, setTeamName] = useState('');
+  const [teamNumber, setTeamNumber] = useState('');
+  const [joinMode, setJoinMode] = useState('create');
+  const [role, setRole] = useState(null);
+  const [assignedRoles, setAssignedRoles] = useState([]);
+  const [showMessage, setShowMessage] = useState(true);
+  const [timeLeft, setTimeLeft] = useState(1200);
+  const [timerStarted, setTimerStarted] = useState(false);
+  const [hintsFound, setHintsFound] = useState([]);
+  const [puzzlesSolved, setPuzzlesSolved] = useState([]);
+  const [nearbyObject, setNearbyObject] = useState(null);
+  const [showHintModal, setShowHintModal] = useState(false);
+  const [currentHint, setCurrentHint] = useState(null);
+  const [showPuzzleModal, setShowPuzzleModal] = useState(false);
+  const [puzzleInput, setPuzzleInput] = useState(['', '', '', '', '']);
+  const [puzzleError, setPuzzleError] = useState('');
+  const [teamSize, setTeamSize] = useState(5);
+  const [gameCompleted, setGameCompleted] = useState(false);
+  const [completionTime, setCompletionTime] = useState(null);
+  
+  // ボクセルパズル用ステート
+  const [showVoxelPuzzle, setShowVoxelPuzzle] = useState(false);
+  const [voxelPuzzleType, setVoxelPuzzleType] = useState(null);
+  const [currentVoxelHintId, setCurrentVoxelHintId] = useState(null);
+  const [voxelPuzzleTarget, setVoxelPuzzleTarget] = useState([]);
+  const [voxelPuzzleProgress, setVoxelPuzzleProgress] = useState(0);
+  
+  // 管理画面用ステート
+  const [adminPassword, setAdminPassword] = useState('');
+  const [allTeams, setAllTeams] = useState([]);
+  const [adminRefreshInterval, setAdminRefreshInterval] = useState(null);
+  
+  // ロビー画面用ステート
+  const [lobbyData, setLobbyData] = useState(null);
+  const [selectedRole, setSelectedRole] = useState(null);
+  const [roleSelectTimer, setRoleSelectTimer] = useState(45);
+  const [myPlayerId, setMyPlayerId] = useState(null);
+  const [lobbyRefreshInterval, setLobbyRefreshInterval] = useState(null);
+  
+  const mountRef = useRef(null);
+  const sceneRef = useRef(null);
+  const cameraRef = useRef(null);
+  const rendererRef = useRef(null);
+  const playerRef = useRef({ x: 0, z: 5, rotation: 0, rotationX: 0 });
+  const keysRef = useRef({});
+  const isMouseDownRef = useRef(false);
+  const lastMouseRef = useRef({ x: 0, y: 0 });
+  const animationIdRef = useRef(null);
+  const hintObjectsRef = useRef([]);
+  const consoleRef = useRef(null);
+
+  // ボクセルパズルコンポーネント
+  // 反射神経ゲームをDOM直接操作で実装（Reactの再レンダリングから完全に独立）
+  const reflexGameContainerRef = useRef(null);
+  
+  const startReflexGame = (diff, puzzType, onComp, onCls) => {
+    // 既存のゲームがあれば削除
+    const existing = document.getElementById('reflex-game-container');
+    if (existing) existing.remove();
+    
+    // コンテナ作成
+    const container = document.createElement('div');
+    container.id = 'reflex-game-container';
+    container.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:99999;display:flex;align-items:center;justify-content:center;';
+    document.body.appendChild(container);
+    
+    // 設定（eスポーツ生徒向け - 高速版）
+    const settings = {
+      1: { targetCount: 3, spawnInterval: 600, targetLife: 1200, required: 8 },
+      2: { targetCount: 4, spawnInterval: 550, targetLife: 1100, required: 10 },
+      3: { targetCount: 5, spawnInterval: 520, targetLife: 1050, required: 12 },
+      4: { targetCount: 6, spawnInterval: 500, targetLife: 1000, required: 15 },
+      5: { targetCount: 7, spawnInterval: 500, targetLife: 1000, required: 18 },
+    };
+    const config = settings[Math.min(diff, 5)] || settings[2];
+    const stars = '★'.repeat(diff) + '☆'.repeat(5-diff);
+    const title = puzzType === 'final' ? '🔐 最終認証チャレンジ' : '⚡ 反射神経テスト';
+    
+    // UI作成
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'background:#1f2937;border:2px solid #00ffff;border-radius:8px;padding:24px;max-width:640px;width:100%;margin:16px;';
+    
+    const titleEl = document.createElement('h2');
+    titleEl.style.cssText = 'color:#00ffff;font-size:24px;font-weight:bold;text-align:center;margin-bottom:16px;';
+    titleEl.textContent = title;
+    wrapper.appendChild(titleEl);
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.id = 'reflex-content';
+    contentDiv.innerHTML = '<div style="text-align:center;padding:32px 0;">' +
+      '<p style="color:#d1d5db;margin-bottom:16px;">光るターゲットをクリック！</p>' +
+      '<p style="color:#00ffff;margin-bottom:8px;">目標: ' + config.required + '個 / 制限時間: 20秒</p>' +
+      '<p style="color:#6b7280;font-size:14px;margin-bottom:24px;">難易度: ' + stars + '</p>' +
+      '<button id="reflex-start" style="background:#0891b2;color:white;font-weight:bold;padding:12px 32px;border-radius:8px;font-size:20px;border:none;cursor:pointer;">スタート！</button>' +
+      '</div>';
+    wrapper.appendChild(contentDiv);
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.style.cssText = 'width:100%;margin-top:16px;background:#374151;color:white;font-weight:bold;padding:8px;border-radius:4px;border:none;cursor:pointer;';
+    closeBtn.textContent = '閉じる';
+    closeBtn.onclick = function() { container.remove(); onCls(); };
+    wrapper.appendChild(closeBtn);
+    
+    container.appendChild(wrapper);
+    
+    // スタートボタン
+    document.getElementById('reflex-start').onclick = function() {
+      var content = document.getElementById('reflex-content');
+      var canvas = document.createElement('canvas');
+      canvas.id = 'reflex-canvas';
+      canvas.width = 560;
+      canvas.height = 360;
+      canvas.style.cssText = 'width:100%;border-radius:4px;border:1px solid #374151;cursor:crosshair;';
+      content.innerHTML = '';
+      content.appendChild(canvas);
+      
+      var ctx = canvas.getContext('2d');
+      var W = canvas.width, H = canvas.height;
+      
+      // ゲーム状態
+      var score = 0, timeLeft = 20, targets = [], animId = null, timerId = null;
+      var cols = 4, rows = 3, cellW = W/cols, cellH = H/rows;
+      var positions = [];
+      for (var r = 0; r < rows; r++) {
+        for (var c = 0; c < cols; c++) {
+          positions.push({ x: c*cellW + cellW/2, y: r*cellH + cellH/2, occupied: false });
+        }
+      }
+      
+      var lastSpawn = 0;
+      
+      function spawnTarget(now) {
+        var free = positions.filter(function(p) { return !p.occupied; });
+        if (free.length === 0 || targets.length >= config.targetCount) return;
+        var pos = free[Math.floor(Math.random() * free.length)];
+        pos.occupied = true;
+        targets.push({
+          x: pos.x, y: pos.y, radius: 40, spawnTime: now, life: config.targetLife,
+          pos: pos, hit: false, hue: Math.random()*60+160
+        });
+      }
+      
+      function draw(now) {
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, W, H);
+        
+        ctx.strokeStyle = '#00ffff33';
+        for (var i = 1; i < cols; i++) { ctx.beginPath(); ctx.moveTo(i*cellW, 0); ctx.lineTo(i*cellW, H); ctx.stroke(); }
+        for (var i = 1; i < rows; i++) { ctx.beginPath(); ctx.moveTo(0, i*cellH); ctx.lineTo(W, i*cellH); ctx.stroke(); }
+        
+        targets.forEach(function(t) {
+          var age = now - t.spawnTime;
+          var life = Math.max(0, 1 - age / t.life);
+          if (t.hit) {
+            ctx.beginPath(); ctx.arc(t.x, t.y, t.radius*1.5*life, 0, Math.PI*2);
+            ctx.fillStyle = 'rgba(0,255,100,' + life + ')'; ctx.fill();
+          } else {
+            var g = ctx.createRadialGradient(t.x-10, t.y-10, 5, t.x, t.y, t.radius);
+            g.addColorStop(0, '#fff');
+            g.addColorStop(0.3, 'hsl(' + t.hue + ', 100%, 50%)');
+            g.addColorStop(1, '#003');
+            ctx.beginPath(); ctx.arc(t.x, t.y, t.radius, 0, Math.PI*2);
+            ctx.fillStyle = g; ctx.fill();
+            ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 3; ctx.stroke();
+            ctx.fillStyle = life > 0.3 ? '#0f0' : '#f00';
+            ctx.fillRect(t.x-30, t.y+t.radius+5, 60*life, 5);
+          }
+        });
+        
+        ctx.fillStyle = '#00ffff'; ctx.font = 'bold 24px monospace';
+        ctx.textAlign = 'left'; ctx.fillText('SCORE: ' + score + ' / ' + config.required, 10, 30);
+        ctx.textAlign = 'right'; ctx.fillStyle = timeLeft <= 5 ? '#f44' : '#fff';
+        ctx.fillText('TIME: ' + timeLeft, W-10, 30);
+      }
+      
+      function endGame(won) {
+        cancelAnimationFrame(animId);
+        clearInterval(timerId);
+        if (won) {
+          content.innerHTML = '<div style="text-align:center;padding:32px;"><div style="color:#4ade80;font-size:36px;font-weight:bold;">✓ クリア！</div></div>';
+          setTimeout(function() { container.remove(); onComp(); }, 1000);
+        } else {
+          content.innerHTML = '<div style="text-align:center;padding:32px;">' +
+            '<div style="color:#f87171;font-size:24px;font-weight:bold;margin-bottom:16px;">タイムアップ...</div>' +
+            '<p style="color:#9ca3af;margin-bottom:16px;">スコア: ' + score + ' / ' + config.required + '</p>' +
+            '<button id="reflex-retry" style="background:#0891b2;color:white;font-weight:bold;padding:8px 24px;border-radius:4px;border:none;cursor:pointer;">もう一度</button>' +
+            '</div>';
+          document.getElementById('reflex-retry').onclick = function() { container.remove(); startReflexGame(diff, puzzType, onComp, onCls); };
+        }
+      }
+      
+      function loop(now) {
+        if (now - lastSpawn > config.spawnInterval) { spawnTarget(now); lastSpawn = now; }
+        targets = targets.filter(function(t) {
+          var age = now - t.spawnTime;
+          if (t.hit && age > 300) { t.pos.occupied = false; return false; }
+          if (!t.hit && age > t.life) { t.pos.occupied = false; return false; }
+          return true;
+        });
+        draw(now);
+        animId = requestAnimationFrame(loop);
+      }
+      
+      canvas.onclick = function(e) {
+        var rect = canvas.getBoundingClientRect();
+        var x = (e.clientX - rect.left) * (W / rect.width);
+        var y = (e.clientY - rect.top) * (H / rect.height);
+        for (var i = targets.length - 1; i >= 0; i--) {
+          var t = targets[i];
+          if (t.hit) continue;
+          if (Math.sqrt(Math.pow(x-t.x, 2) + Math.pow(y-t.y, 2)) < t.radius) {
+            t.hit = true; t.spawnTime = performance.now(); score++;
+            if (score >= config.required) endGame(true);
+            break;
+          }
+        }
+      };
+      
+      timerId = setInterval(function() {
+        timeLeft--;
+        if (timeLeft <= 0) endGame(score >= config.required);
+      }, 1000);
+      
+      animId = requestAnimationFrame(loop);
+    };
+  };
+
+  // 難易度に応じたパズル形状を生成（全て1段目のみ）
+  const generatePuzzleShape = (difficulty) => {
+    const shapes = {
+      // 2人チーム用（簡単）- 2ブロック（横並び）
+      1: [
+        { x: 0, y: 0, z: 0 },
+        { x: 1, y: 0, z: 0 }
+      ],
+      // 3人チーム用 - 3ブロック（L字）
+      2: [
+        { x: 0, y: 0, z: 0 },
+        { x: 1, y: 0, z: 0 },
+        { x: 0, y: 0, z: 1 }
+      ],
+      // 4人チーム用 - 4ブロック（T字）
+      3: [
+        { x: 0, y: 0, z: 1 },
+        { x: 1, y: 0, z: 1 },
+        { x: 2, y: 0, z: 1 },
+        { x: 1, y: 0, z: 0 }
+      ],
+      // 5人チーム用 - 5ブロック（十字）
+      4: [
+        { x: 1, y: 0, z: 0 },
+        { x: 0, y: 0, z: 1 },
+        { x: 1, y: 0, z: 1 },
+        { x: 2, y: 0, z: 1 },
+        { x: 1, y: 0, z: 2 }
+      ],
+      // 最終パズル用 - 7ブロック（大きな形状）
+      5: [
+        { x: 0, y: 0, z: 0 },
+        { x: 1, y: 0, z: 0 },
+        { x: 2, y: 0, z: 0 },
+        { x: 0, y: 0, z: 1 },
+        { x: 1, y: 0, z: 1 },
+        { x: 0, y: 0, z: 2 },
+        { x: 1, y: 0, z: 2 }
+      ]
+    };
+    return shapes[Math.min(difficulty, 5)] || shapes[1];
+  };
+
+  // チーム人数から難易度を計算
+  const getDifficultyFromTeamSize = (size) => {
+    return Math.min(size, 5);
+  };
+
+  // 管理画面: 全チームデータを取得
+  const fetchAllTeams = async () => {
+    try {
+      const result = await window.storage.list('team:', true);
+      if (result && result.keys) {
+        const teams = [];
+        for (const key of result.keys) {
+          try {
+            const teamResult = await window.storage.get(key, true);
+            if (teamResult) {
+              const teamData = JSON.parse(teamResult.value);
+              teams.push(teamData);
+            }
+          } catch (e) {
+            console.error('Error fetching team:', key, e);
+          }
+        }
+        // クリアタイム順、未クリアは進捗順にソート
+        teams.sort((a, b) => {
+          if (a.completed && b.completed) {
+            return (a.completionTime || 9999) - (b.completionTime || 9999);
+          }
+          if (a.completed) return -1;
+          if (b.completed) return 1;
+          return (b.hintsFound?.length || 0) - (a.hintsFound?.length || 0);
+        });
+        setAllTeams(teams);
+      }
+    } catch (error) {
+      console.error('Error fetching teams:', error);
+    }
+  };
+
+  // 管理画面に入る
+  const enterAdminScreen = () => {
+    if (adminPassword === 'admin123') {
+      setScreen('admin');
+      fetchAllTeams();
+      // 5秒ごとに更新
+      const interval = setInterval(fetchAllTeams, 5000);
+      setAdminRefreshInterval(interval);
+    } else {
+      alert('パスワードが違います');
+    }
+  };
+
+  // 管理画面から退出
+  const exitAdminScreen = () => {
+    if (adminRefreshInterval) {
+      clearInterval(adminRefreshInterval);
+      setAdminRefreshInterval(null);
+    }
+    setScreen('entry');
+    setAdminPassword('');
+  };
+
+  // チームの残り時間を計算
+  const getTeamTimeLeft = (team) => {
+    if (!team.startTime) return 1200;
+    if (team.completed) return 1200 - (team.completionTime || 0);
+    const elapsed = Math.floor((Date.now() - team.startTime) / 1000);
+    return Math.max(0, 1200 - elapsed);
+  };
+
+  // 全チームリセット
+  const resetAllTeams = async () => {
+    if (!confirm('全てのチームデータを削除しますか？この操作は取り消せません。')) return;
+    try {
+      const result = await window.storage.list('team:', true);
+      if (result && result.keys) {
+        for (const key of result.keys) {
+          await window.storage.delete(key, true);
+        }
+      }
+      setAllTeams([]);
+      alert('全チームデータを削除しました');
+    } catch (error) {
+      console.error('Error resetting teams:', error);
+      alert('削除に失敗しました');
+    }
+  };
+
+  // ロビーデータを取得
+  const fetchLobbyData = () => {
+    const result = storage.get(`team:${teamNumber}`);
+    if (result) {
+      const data = JSON.parse(result.value);
+      setLobbyData(data);
+      
+      // 全員揃ったらロビー開始時刻をセット
+      const maxMembers = data.maxMembers || teamSize;
+      const allJoined = data.members && data.members.length >= maxMembers;
+      
+      if (allJoined && !data.lobbyStartTime) {
+        data.lobbyStartTime = Date.now();
+        storage.set(`team:${teamNumber}`, JSON.stringify(data));
+      }
+      
+      // 残り時間を計算（全員揃ってから）
+      if (data.lobbyStartTime) {
+        const elapsed = Math.floor((Date.now() - data.lobbyStartTime) / 1000);
+        const remaining = Math.max(0, 45 - elapsed);
+        setRoleSelectTimer(remaining);
+        
+        // タイムアップでゲーム開始
+        if (remaining <= 0 && !data.gameStarted && selectedRole !== null) {
+          autoAssignAndStart(data);
+        }
+      }
+      
+      // ゲームが開始されていたら自分も移行
+      if (data.gameStarted) {
+        const myEntry = data.members.find(m => m.oderId === myPlayerId);
+        if (myEntry && myEntry.roleIndex !== undefined) {
+          const availableRoles = getRolesForTeamSize(data.maxMembers || teamSize);
+          setRole(availableRoles[myEntry.roleIndex]);
+          setShowMessage(true);
+          setTimerStarted(true);
+          setScreen('game');
+        }
+      }
+    }
+  };
+
+  // 役割を選択
+  const selectRole = (roleIndex) => {
+    if (!lobbyData || selectedRole !== null) return;
+    
+    const result = storage.get(`team:${teamNumber}`);
+    if (!result) return;
+    const data = JSON.parse(result.value);
+    
+    // 既に誰かが選んでいないかチェック
+    const alreadyTaken = data.members.some(m => m.roleIndex === roleIndex);
+    if (alreadyTaken) {
+      alert('この役割は既に選ばれています');
+      fetchLobbyData();
+      return;
+    }
+    
+    // 自分のエントリを更新
+    const myEntry = data.members.find(m => m.oderId === myPlayerId);
+    if (myEntry) {
+      myEntry.roleIndex = roleIndex;
+      const availableRoles = getRolesForTeamSize(data.maxMembers || teamSize);
+      myEntry.roleName = availableRoles[roleIndex].name;
+      storage.set(`team:${teamNumber}`, JSON.stringify(data));
+      setSelectedRole(roleIndex);
+      setLobbyData(data);
+    }
+  };
+
+  // 自動割り当てしてゲーム開始
+  const autoAssignAndStart = (data) => {
+    const result = storage.get(`team:${teamNumber}`);
+    if (!result) return;
+    const latestData = JSON.parse(result.value);
+    
+    if (latestData.gameStarted) return;
+    
+    const maxMembers = latestData.maxMembers || teamSize;
+    const availableRoles = getRolesForTeamSize(maxMembers);
+    
+    // 未選択のメンバーに役割を自動割り当て
+    const takenRoles = latestData.members.filter(m => m.roleIndex !== undefined).map(m => m.roleIndex);
+    const freeRoles = [];
+    
+    for (let i = 0; i < availableRoles.length; i++) {
+      if (!takenRoles.includes(i)) {
+        freeRoles.push(i);
+      }
+    }
+    
+    latestData.members.forEach(member => {
+      if (member.roleIndex === undefined && freeRoles.length > 0) {
+        member.roleIndex = freeRoles.shift();
+        member.roleName = availableRoles[member.roleIndex].name;
+        member.autoAssigned = true;
+      }
+    });
+    
+    latestData.gameStarted = true;
+    latestData.startTime = Date.now();
+    storage.set(`team:${teamNumber}`, JSON.stringify(latestData));
+    
+    // 自分の役割を設定してゲーム画面へ
+    const myEntry = latestData.members.find(m => m.oderId === myPlayerId);
+    if (myEntry && myEntry.roleIndex !== undefined) {
+      const myRole = availableRoles[myEntry.roleIndex];
+      setRole(myRole);
+      setAssignedRoles([myRole]);
+      setSelectedRole(myEntry.roleIndex);
+    }
+    
+    setTeamSize(maxMembers);
+    setTimerStarted(true);
+    setScreen('game');
+  };
+
+  // ロビーに入る
+  const enterLobby = () => {
+    const result = storage.get(`team:${teamNumber}`);
+    if (!result) {
+      alert('チームが見つかりません');
+      return;
+    }
+    const data = JSON.parse(result.value);
+    
+    // 既にゲーム開始済みなら直接ゲームへ（途中参加）
+    if (data.gameStarted) {
+      alert('ゲームは既に開始されています');
+      return;
+    }
+    
+    // 人数上限チェック
+    if (data.members && data.members.length >= data.maxMembers) {
+      alert('チームは満員です');
+      return;
+    }
+    
+    // プレイヤーIDを生成
+    const oderId = `P${Date.now()}`;
+    setMyPlayerId(oderId);
+    
+    // メンバーとして追加
+    if (!data.members) data.members = [];
+    data.members.push({
+      oderId: oderId,
+      joinTime: Date.now(),
+      roleIndex: undefined,
+      roleName: undefined
+    });
+    
+    storage.set(`team:${teamNumber}`, JSON.stringify(data));
+    setLobbyData(data);
+    setRoleSelectTimer(45);
+    setScreen('lobby');
+  };
+
+  // テスト用：ダミーメンバー追加
+  const forceFullTeam = () => {
+    const result = storage.get(`team:${teamNumber}`);
+    if (result) {
+      const data = JSON.parse(result.value);
+      const maxMembers = data.maxMembers || teamSize;
+      while (data.members.length < maxMembers) {
+        data.members.push({
+          oderId: `DUMMY${Date.now()}${Math.random()}`,
+          joinTime: Date.now(),
+          roleIndex: undefined
+        });
+      }
+      storage.set(`team:${teamNumber}`, JSON.stringify(data));
+      setLobbyData(data);
+      fetchLobbyData();
+      alert('テスト用にダミーメンバーを追加しました');
+    }
+  };
+
+  // ロビーから退出
+  const exitLobby = () => {
+    if (lobbyRefreshInterval) {
+      clearInterval(lobbyRefreshInterval);
+      setLobbyRefreshInterval(null);
+    }
+    setScreen('entry');
+    setSelectedRole(null);
+    setLobbyData(null);
+    setMyPlayerId(null);
+  };
+
+  // 準備完了（役割確定してゲーム開始待ち）
+  const confirmRoleAndWait = async () => {
+    if (selectedRole === null) {
+      alert('役割を選んでください');
+      return;
+    }
+    
+    try {
+      const result = await window.storage.get(`team:${teamNumber}`, true);
+      const data = JSON.parse(result.value);
+      
+      const myEntry = data.members.find(m => m.oderId === myPlayerId);
+      if (myEntry) {
+        myEntry.ready = true;
+        await window.storage.set(`team:${teamNumber}`, JSON.stringify(data), true);
+      }
+      
+      // 全員準備完了かチェック
+      const allReady = data.members.every(m => m.ready);
+      if (allReady && data.members.length >= 2) {
+        await autoAssignAndStart(data);
+      }
+    } catch (error) {
+      console.error('Confirm role error:', error);
+    }
+  };
+
+  // ロビータイマー
+  useEffect(() => {
+    if (screen === 'lobby' && roleSelectTimer > 0) {
+      const timer = setTimeout(() => {
+        setRoleSelectTimer(prev => Math.max(0, prev - 1));
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (screen === 'lobby' && roleSelectTimer === 0 && lobbyData && !lobbyData.gameStarted) {
+      autoAssignAndStart(lobbyData);
+    }
+  }, [screen, roleSelectTimer, lobbyData]);
+
+  // ロビー終了時のクリーンアップ
+  useEffect(() => {
+    return () => {
+      if (lobbyRefreshInterval) {
+        clearInterval(lobbyRefreshInterval);
+      }
+    };
+  }, [lobbyRefreshInterval]);
+
+  // 役割定義（5種類）- シークレットメッセージ3行
+  // 役割定義（人数に応じて使用）
+  const roleDefinitions = {
+    leader: { id: 'leader', name: 'リーダー', icon: '👑', color: '#ffd700' },
+    decoder: { id: 'decoder', name: '解読員', icon: '🔓', color: '#ff6b6b' },
+    investigator: { id: 'investigator', name: '調査員', icon: '🔍', color: '#4ecdc4' },
+    analyst: { id: 'analyst', name: '分析員', icon: '📊', color: '#95e1d3' },
+    communicator: { id: 'communicator', name: '通信員', icon: '📡', color: '#dda0dd' },
+  };
+
+  // 人数別役割リスト
+  const getRolesForTeamSize = (size) => {
+    const r = roleDefinitions;
+    switch(size) {
+      case 2: return [r.leader, r.decoder];
+      case 3: return [r.leader, r.decoder, r.investigator];
+      case 4: return [r.leader, r.decoder, r.investigator, r.analyst];
+      case 5: return [r.leader, r.decoder, r.investigator, r.analyst, r.communicator];
+      default: return [r.leader, r.decoder];
+    }
+  };
+
+  // 人数別シークレットメッセージ
+  const getSecretMessage = (size, roleId) => {
+    const messages = {
+      2: {
+        leader: ['【指令】最終入力はあなたが行う', '図形の「何か」が順番を決めるらしい', '相棒と協力して法則を見つけよ'],
+        decoder: ['【受信】数字の列を傍受した', 'しかし意味がわからない', '相棒と一緒に解読せよ'],
+      },
+      3: {
+        leader: ['【指令】最終入力はあなたが行う', '「法則」と「対応表」が必要らしい', '仲間から情報を集めよ'],
+        decoder: ['【受信】順番には法則がある', '「角」に関係するらしいが...', '詳細は調査が必要'],
+        investigator: ['【報告】色付きの石板を発見', '青、緑、黄、赤、紫の5色', 'それぞれに「形」が対応している'],
+      },
+      4: {
+        leader: ['【指令】最終入力はあなたが行う', '自分は何も情報を持っていない', '3人全員から報告を受けよ'],
+        decoder: ['【受信】順番の法則を一部解読', '「角の数」が関係している', 'だが数字がわからない'],
+        investigator: ['【報告】石板の色を発見', '青→緑→黄→?→?', '残りの色と形は調査中'],
+        analyst: ['【解析】数字の断片を発見', '3, 4, ?, ?, 4', '欠けた数字は誰かが知っている'],
+      },
+      5: {
+        leader: ['【指令】最終入力を行う', '自分は何も知らない', '4人から情報を集めよ'],
+        decoder: ['【断片】「角」という文字を受信', '意味は不明', '他のメンバーの情報が必要'],
+        investigator: ['【報告】色の石板を発見', '青と緑を見つけた', '残りは探索中'],
+        analyst: ['【解析】数字を発見', '3, ?, 5, ?, ?', '欠けている数字がある'],
+        communicator: ['【傍受】通信を解読', '解読員が「法則の種類」を知る', '分析員が「数字」を知る'],
+      },
+    };
+    return messages[size]?.[roleId] || ['情報なし'];
+  };
+
+  // 人数別フィールドヒント
+  const getFieldHints = (size, roleId) => {
+    const hints = {
+      2: {
+        leader: ['▲は1番目', '★は3番目', '●は■より後ろ'],
+        decoder: ['数列：3, 4, 5, ?, ?', '■は2番目', '◆は最後'],
+      },
+      3: {
+        leader: ['1番目は3角の形', '4角の形は2つある'],
+        decoder: ['数列：3, 4, 5, 0, 4', 'この数列が順番を決める'],
+        investigator: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'],
+      },
+      4: {
+        leader: ['答えは5つの形の列'],
+        decoder: ['角の数で順番が決まる', '3番目は5角'],
+        investigator: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'],
+        analyst: ['数列完成：3,4,5,0,4', '4番目は0'],
+      },
+      5: {
+        leader: ['全員の情報を統合せよ'],
+        decoder: ['角の数が順番の法則'],
+        investigator: ['青=▲ 緑=■', '黄=★ 赤=● 紫=◆'],
+        analyst: ['数列：3,4,5,0,4'],
+        communicator: ['4角の形は2つある', '■が先、◆が後'],
+      },
+    };
+    return hints[size]?.[roleId] || [];
+  };
+
+  // 共通ヒント
+  const commonHints = [
+    { location: '入口の壁', text: '5つの形が扉を開く' },
+    { location: '中央の床', text: '▲=3角 ■=4角 ★=5角 ●=0角 ◆=4角' },
+    { location: '本棚', text: '角の数に注目せよ' },
+  ];
+
+  // 正解（図形の順番）
+  const correctAnswer = ['▲', '■', '★', '●', '◆'];
+  const shapes = ['▲', '■', '★', '●', '◆'];
+
+  // 後方互換のためのrolesゲッター
+  const roles = getRolesForTeamSize(teamSize);
+  const correctNumbers = ['7', '3', '1', '9', '5'];
+
+  // 人数別の役割割り当て
+  const getRoleAssignments = (memberCount, memberIndex) => {
+    if (memberCount >= 5) {
+      return [roles[memberIndex % 5]];
+    } else if (memberCount === 4) {
+      const assignments = [
+        [roles[0]], // セキュリティ
+        [roles[1]], // データ
+        [roles[2]], // ネットワーク
+        [roles[3], roles[4]] // システム + AI
+      ];
+      return assignments[memberIndex % 4];
+    } else if (memberCount === 3) {
+      const assignments = [
+        [roles[0], roles[1]], // セキュリティ + データ
+        [roles[2], roles[3]], // ネットワーク + システム
+        [roles[4]] // AI
+      ];
+      return assignments[memberIndex % 3];
+    } else {
+      const assignments = [
+        [roles[0], roles[1], roles[2]], // セキュリティ + データ + ネットワーク
+        [roles[3], roles[4]] // システム + AI
+      ];
+      return assignments[memberIndex % 2];
+    }
+  };
+
+  // ストレージヘルパー（localStorage使用）
+  const storage = {
+    get: (key) => {
+      try {
+        const val = localStorage.getItem(key);
+        return val ? { key, value: val } : null;
+      } catch (e) { return null; }
+    },
+    set: (key, value) => {
+      try {
+        localStorage.setItem(key, value);
+        return { key, value };
+      } catch (e) { return null; }
+    },
+    list: (prefix) => {
+      try {
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith(prefix)) keys.push(key);
+        }
+        return { keys };
+      } catch (e) { return { keys: [] }; }
+    },
+    delete: (key) => {
+      try {
+        localStorage.removeItem(key);
+        return { deleted: true };
+      } catch (e) { return null; }
+    }
+  };
+
+  // チーム作成
+  const handleCreateTeam = () => {
+    if (!teamName.trim()) return;
+    
+    // 4桁のランダムな数字（1000-9999）
+    const teamNum = String(1000 + Math.floor(Math.random() * 9000));
+    
+    // 重複チェック
+    const existing = storage.get(`team:${teamNum}`);
+    if (existing) {
+      handleCreateTeam();
+      return;
+    }
+    
+    const teamData = {
+      name: teamName,
+      number: teamNum,
+      maxMembers: teamSize,
+      members: [],
+      lobbyStartTime: null,
+      gameStarted: false,
+      startTime: null,
+      hintsFound: [],
+      puzzlesSolved: [],
+      completed: false,
+      completionTime: null,
+      createdAt: Date.now()
+    };
+    
+    storage.set(`team:${teamNum}`, JSON.stringify(teamData));
+    
+    setTeamNumber(teamNum);
+    setScreen('waiting');
+  };
+
+  // チーム参加
+  const handleJoinTeam = () => {
+    if (!teamNumber.trim()) return;
+    
+    // 数字のみに正規化
+    const normalizedNumber = teamNumber.replace(/\D/g, '');
+    const result = storage.get(`team:${normalizedNumber}`);
+    if (!result) {
+      alert('チームが見つかりません。チーム番号を確認してください。');
+      return;
+    }
+    
+    const teamData = JSON.parse(result.value);
+    
+    // 人数上限チェック
+    if (teamData.members && teamData.members.length >= teamData.maxMembers) {
+      alert(`このチームは満員です（${teamData.maxMembers}人）`);
+      return;
+    }
+    
+    // ゲーム開始済みチェック
+    if (teamData.gameStarted) {
+      alert('このチームはすでにゲームを開始しています');
+      return;
+    }
+    
+    setTeamName(teamData.name);
+    setTeamNumber(normalizedNumber);
+    setTeamSize(teamData.maxMembers || 5);
+    setScreen('waiting');
+  };
+
+  // ゲーム開始（ロビー経由）
+  const handleStartGame = () => {
+    if (selectedRole === null) {
+      alert('役割を選んでください');
+      return;
+    }
+    
+    const result = storage.get(`team:${teamNumber}`);
+    if (!result) return;
+    const data = JSON.parse(result.value);
+    
+    const maxMembers = data.maxMembers || teamSize;
+    const availableRoles = getRolesForTeamSize(maxMembers);
+    
+    // 未選択者に自動割り当て
+    const takenRoles = data.members.filter(m => m.roleIndex !== undefined).map(m => m.roleIndex);
+    const freeRoles = [];
+    for (let i = 0; i < availableRoles.length; i++) {
+      if (!takenRoles.includes(i)) freeRoles.push(i);
+    }
+    
+    data.members.forEach(member => {
+      if (member.roleIndex === undefined && freeRoles.length > 0) {
+        member.roleIndex = freeRoles.shift();
+        member.roleName = availableRoles[member.roleIndex]?.name;
+        member.autoAssigned = true;
+      }
+    });
+    
+    data.gameStarted = true;
+    data.startTime = Date.now();
+    storage.set(`team:${teamNumber}`, JSON.stringify(data));
+    
+    setRole(availableRoles[selectedRole]);
+    setAssignedRoles([availableRoles[selectedRole]]);
+    setShowMessage(true);
+    setTimerStarted(true);
+    setScreen('game');
+  };
+
+  // ヒント取得（ボクセルパズル経由）
+  const collectHint = async (hintId) => {
+    if (hintsFound.includes(hintId)) {
+      // 既に取得済みの場合はそのまま表示
+      const roleForHint = roles[hintId];
+      const isMyHint = assignedRoles.some(r => r.id === roleForHint.id);
+      
+      if (!isMyHint) {
+        setCurrentHint({
+          title: '???',
+          message: 'このヒントはあなたの役割では見えません。\n他のチームメンバーに確認してもらいましょう。',
+          color: '#666666'
+        });
+      } else {
+        const hints = roleForHint.hints;
+        setCurrentHint({
+          title: roleForHint.name + 'のヒント',
+          message: hints.map(h => `【${h.fragment}】\n${h.clue}`).join('\n\n'),
+          color: roleForHint.color
+        });
+      }
+      setShowHintModal(true);
+      return;
+    }
+    
+    const roleForHint = roles[hintId];
+    const isMyHint = assignedRoles.some(r => r.id === roleForHint.id);
+    
+    if (!isMyHint) {
+      setCurrentHint({
+        title: '???',
+        message: 'このヒントはあなたの役割では見えません。\n他のチームメンバーに確認してもらいましょう。',
+        color: '#666666'
+      });
+      setShowHintModal(true);
+      return;
+    }
+    
+    // 反射神経ゲームを開始（DOM直接操作）
+    const difficulty = getDifficultyFromTeamSize(teamSize);
+    setCurrentVoxelHintId(hintId);
+    setVoxelPuzzleType('hint');
+    startReflexGame(difficulty, 'hint', onVoxelPuzzleComplete, closeReflexGame);
+  };
+
+  // 反射神経ゲームを閉じる
+  const closeReflexGame = useCallback(() => {
+    const existing = document.getElementById('reflex-game-container');
+    if (existing) existing.remove();
+  }, []);
+
+  // ボクセルパズルクリア時の処理
+  const onVoxelPuzzleComplete = () => {
+    if (voxelPuzzleType === 'hint' && currentVoxelHintId !== null) {
+      // ヒント取得を記録
+      const newHintsFound = [...hintsFound, currentVoxelHintId];
+      setHintsFound(newHintsFound);
+      
+      // ヒントの色と名前（クリスタルの色に対応）
+      const hintInfo = [
+        { name: 'リーダー', color: '#ffd700' },
+        { name: '解読員', color: '#ff6b6b' },
+        { name: '調査員', color: '#4ecdc4' },
+        { name: '分析員', color: '#95e1d3' },
+        { name: '通信員', color: '#dda0dd' }
+      ];
+      
+      const info = hintInfo[currentVoxelHintId] || { name: '不明', color: '#ffffff' };
+      
+      // 役割に応じたフィールドヒントを取得
+      const roleIds = ['leader', 'decoder', 'investigator', 'analyst', 'communicator'];
+      const roleId = roleIds[currentVoxelHintId];
+      const fieldHints = getFieldHints(teamSize, roleId) || ['ヒントなし'];
+      
+      setCurrentHint({
+        title: info.name + 'のヒント',
+        message: fieldHints.join('\n'),
+        color: info.color
+      });
+      
+      setShowHintModal(true);
+    } else if (voxelPuzzleType === 'final') {
+      // 最終パズルクリア
+      setGameCompleted(true);
+      
+      const finalTime = 1200 - timeLeft;
+      setCompletionTime(finalTime);
+      
+      setScreen('complete');
+    }
+  };
+
+  // 最終パズルを開始
+  const startFinalPuzzle = () => {
+    if (hintsFound.length < 5) {
+      setPuzzleError(`まだ全てのヒントを集めていません（${hintsFound.length}/5）`);
+      return;
+    }
+    setShowPuzzleModal(false);
+    setVoxelPuzzleType('final');
+    startReflexGame(5, 'final', onVoxelPuzzleComplete, closeReflexGame);
+  };
+
+  // タイマー
+  useEffect(() => {
+    if (timerStarted && timeLeft > 0 && screen === 'game') {
+      const timer = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            setScreen('complete');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [timerStarted, timeLeft, screen]);
+
+  // キー入力でインタラクション
+  useEffect(() => {
+    const handleInteraction = (e) => {
+      if (e.key.toLowerCase() === 'e' && nearbyObject) {
+        if (nearbyObject.type === 'hint') {
+          collectHint(nearbyObject.id);
+        } else if (nearbyObject.type === 'puzzle') {
+          setShowPuzzleModal(true);
+        }
+      }
+    };
+    
+    window.addEventListener('keydown', handleInteraction);
+    return () => window.removeEventListener('keydown', handleInteraction);
+  }, [nearbyObject, hintsFound, assignedRoles]);
+
+  // Three.js シーン
+  useEffect(() => {
+    if (screen !== 'game' || !mountRef.current) return;
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x000510, 10, 50);
+    sceneRef.current = scene;
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 1.6, 8);
+    cameraRef.current = camera;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    mountRef.current.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
+
+    // ライティング
+    const ambientLight = new THREE.AmbientLight(0x4a5f8f, 0.4);
+    scene.add(ambientLight);
+
+    const topLight = new THREE.PointLight(0xadd8e6, 2, 30);
+    topLight.position.set(0, 15, 0);
+    topLight.castShadow = true;
+    topLight.shadow.mapSize.width = 2048;
+    topLight.shadow.mapSize.height = 2048;
+    scene.add(topLight);
+
+    const blueLight1 = new THREE.PointLight(0x00ffff, 1.5, 20);
+    blueLight1.position.set(-10, 3, -10);
+    scene.add(blueLight1);
+
+    const blueLight2 = new THREE.PointLight(0x00ffff, 1.5, 20);
+    blueLight2.position.set(10, 3, -10);
+    scene.add(blueLight2);
+
+    const purpleLight = new THREE.PointLight(0xff00ff, 1.2, 15);
+    purpleLight.position.set(0, 2, -15);
+    scene.add(purpleLight);
+
+    const greenLight = new THREE.PointLight(0x00ff88, 1, 12);
+    greenLight.position.set(-8, 2, 0);
+    scene.add(greenLight);
+
+    // 床
+    const floorGeometry = new THREE.CircleGeometry(18, 64);
+    const floorMaterial = new THREE.MeshStandardMaterial({
+      color: 0x2a3550,
+      metalness: 0.3,
+      roughness: 0.7
+    });
+    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // 魔法陣
+    const circleGeometry = new THREE.RingGeometry(8, 8.2, 64);
+    const circleMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.6,
+      side: THREE.DoubleSide
+    });
+    const magicCircle = new THREE.Mesh(circleGeometry, circleMaterial);
+    magicCircle.rotation.x = -Math.PI / 2;
+    magicCircle.position.y = 0.02;
+    scene.add(magicCircle);
+
+    const innerCircle = new THREE.Mesh(
+      new THREE.RingGeometry(5, 5.15, 64),
+      circleMaterial
+    );
+    innerCircle.rotation.x = -Math.PI / 2;
+    innerCircle.position.y = 0.03;
+    scene.add(innerCircle);
+
+    // 六芒星
+    const starPoints = [];
+    for (let i = 0; i < 6; i++) {
+      const angle = (i * Math.PI * 2) / 6 - Math.PI / 2;
+      starPoints.push(new THREE.Vector3(
+        Math.cos(angle) * 6,
+        0.04,
+        Math.sin(angle) * 6
+      ));
+    }
+    for (let i = 0; i < 6; i++) {
+      const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+        starPoints[i],
+        starPoints[(i + 2) % 6]
+      ]);
+      const lineMaterial = new THREE.LineBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0.7
+      });
+      const line = new THREE.Line(lineGeometry, lineMaterial);
+      scene.add(line);
+    }
+
+    // 壁
+    const wallSegments = 32;
+    for (let i = 0; i < wallSegments; i++) {
+      const angle = (i / wallSegments) * Math.PI * 2;
+      const wallGeometry = new THREE.BoxGeometry(2, 12, 0.5);
+      const wallMaterial = new THREE.MeshStandardMaterial({
+        color: 0x1a1a2e,
+        metalness: 0.2,
+        roughness: 0.8
+      });
+      const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+      wall.position.x = Math.cos(angle) * 17;
+      wall.position.z = Math.sin(angle) * 17;
+      wall.position.y = 6;
+      wall.rotation.y = -angle;
+      wall.castShadow = true;
+      wall.receiveShadow = true;
+      scene.add(wall);
+    }
+
+    // 木目テクスチャ生成
+    const createWoodTexture = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      
+      const gradient = ctx.createLinearGradient(0, 0, 512, 0);
+      gradient.addColorStop(0, '#3a2515');
+      gradient.addColorStop(0.5, '#4a3020');
+      gradient.addColorStop(1, '#3a2515');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 512, 512);
+      
+      for (let i = 0; i < 80; i++) {
+        ctx.strokeStyle = `rgba(${30 + Math.random() * 20}, ${20 + Math.random() * 15}, ${10 + Math.random() * 10}, ${0.4 + Math.random() * 0.3})`;
+        ctx.lineWidth = 0.5 + Math.random() * 2;
+        ctx.beginPath();
+        const y = Math.random() * 512;
+        const variance = Math.random() * 40 - 20;
+        ctx.moveTo(0, y);
+        ctx.bezierCurveTo(170, y + variance, 340, y - variance, 512, y);
+        ctx.stroke();
+      }
+      
+      for (let i = 0; i < 5; i++) {
+        const x = Math.random() * 512;
+        const y = Math.random() * 512;
+        const radius = 10 + Math.random() * 20;
+        const knotGradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+        knotGradient.addColorStop(0, 'rgba(20, 15, 10, 0.6)');
+        knotGradient.addColorStop(1, 'rgba(20, 15, 10, 0)');
+        ctx.fillStyle = knotGradient;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      return texture;
+    };
+
+    const createBookTexture = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      
+      const colors = ['#2a4a7a', '#4a2a6a', '#5a3a2a', '#2a5a4a', '#6a4a2a', '#3a3a5a'];
+      const baseColor = colors[Math.floor(Math.random() * colors.length)];
+      ctx.fillStyle = baseColor;
+      ctx.fillRect(0, 0, 128, 256);
+      
+      ctx.strokeStyle = 'rgba(200, 180, 120, 0.5)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) {
+        ctx.beginPath();
+        ctx.moveTo(10, 60 + i * 30);
+        ctx.lineTo(118, 60 + i * 30);
+        ctx.stroke();
+      }
+      
+      const edgeGradient = ctx.createLinearGradient(0, 0, 20, 0);
+      edgeGradient.addColorStop(0, 'rgba(0, 0, 0, 0.3)');
+      edgeGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = edgeGradient;
+      ctx.fillRect(0, 0, 20, 256);
+      
+      return new THREE.CanvasTexture(canvas);
+    };
+
+    const woodTexture = createWoodTexture();
+    woodTexture.repeat.set(1, 2);
+
+    // 本棚
+    for (let i = 0; i < 12; i++) {
+      const angle = (i / 12) * Math.PI * 2;
+      
+      const shelfGeometry = new THREE.BoxGeometry(3.5, 8, 0.2);
+      const shelfMaterial = new THREE.MeshStandardMaterial({
+        map: woodTexture.clone(),
+        color: 0x5a4530,
+        metalness: 0.05,
+        roughness: 0.95
+      });
+      const shelf = new THREE.Mesh(shelfGeometry, shelfMaterial);
+      shelf.position.x = Math.cos(angle) * 15.2;
+      shelf.position.z = Math.sin(angle) * 15.2;
+      shelf.position.y = 4;
+      shelf.rotation.y = -angle;
+      shelf.castShadow = true;
+      shelf.receiveShadow = true;
+      scene.add(shelf);
+
+      const sideGeometry = new THREE.BoxGeometry(0.15, 8, 0.6);
+      const sideMaterial = new THREE.MeshStandardMaterial({
+        map: woodTexture.clone(),
+        color: 0x4a3520,
+        metalness: 0.05,
+        roughness: 0.95
+      });
+      
+      const leftSide = new THREE.Mesh(sideGeometry, sideMaterial);
+      leftSide.position.x = shelf.position.x + Math.cos(angle - Math.PI / 2) * 1.75;
+      leftSide.position.z = shelf.position.z + Math.sin(angle - Math.PI / 2) * 1.75;
+      leftSide.position.y = 4;
+      leftSide.rotation.y = -angle;
+      leftSide.castShadow = true;
+      scene.add(leftSide);
+      
+      const rightSide = new THREE.Mesh(sideGeometry, sideMaterial);
+      rightSide.position.x = shelf.position.x + Math.cos(angle + Math.PI / 2) * 1.75;
+      rightSide.position.z = shelf.position.z + Math.sin(angle + Math.PI / 2) * 1.75;
+      rightSide.position.y = 4;
+      rightSide.rotation.y = -angle;
+      rightSide.castShadow = true;
+      scene.add(rightSide);
+
+      for (let level = 0; level < 5; level++) {
+        const shelfPlateGeometry = new THREE.BoxGeometry(3.3, 0.08, 0.55);
+        const plateTexture = woodTexture.clone();
+        plateTexture.repeat.set(2, 1);
+        const shelfPlateMaterial = new THREE.MeshStandardMaterial({
+          map: plateTexture,
+          color: 0x5a4a35,
+          metalness: 0.05,
+          roughness: 0.9
+        });
+        const shelfPlate = new THREE.Mesh(shelfPlateGeometry, shelfPlateMaterial);
+        shelfPlate.position.x = shelf.position.x;
+        shelfPlate.position.z = shelf.position.z;
+        shelfPlate.position.y = 0.8 + level * 1.6;
+        shelfPlate.rotation.y = -angle;
+        shelfPlate.castShadow = true;
+        shelfPlate.receiveShadow = true;
+        scene.add(shelfPlate);
+      }
+
+      // 本を配置
+      for (let j = 0; j < 5; j++) {
+        const booksPerShelf = 12; // 各棚に12冊
+        const shelfY = 1.1 + j * 1.6;
+        
+        for (let k = 0; k < booksPerShelf; k++) {
+          const bookTexture = createBookTexture();
+          const bookWidth = 0.12;
+          const bookHeight = 0.5 + Math.random() * 0.2;
+          const bookDepth = 0.35;
+          const bookGeometry = new THREE.BoxGeometry(bookWidth, bookHeight, bookDepth);
+          const bookMaterial = new THREE.MeshStandardMaterial({
+            map: bookTexture,
+            emissive: Math.random() > 0.85 ? 0x001133 : 0x000000,
+            emissiveIntensity: 0.3,
+            metalness: 0.1,
+            roughness: 0.85
+          });
+          const book = new THREE.Mesh(bookGeometry, bookMaterial);
+          
+          // 本を横に並べる（-1.4 から 1.4 の範囲）
+          const xOffset = (k - (booksPerShelf - 1) / 2) * 0.24;
+          
+          // 本棚のローカル座標系で配置してから回転
+          // 本棚は angle の方向を向いている
+          // 本は棚板の上、背板の手前に配置
+          const localX = xOffset;  // 横方向
+          const localZ = 0.15;     // 手前方向（中心に向かって）
+          
+          // 回転行列を適用
+          const cosA = Math.cos(angle);
+          const sinA = Math.sin(angle);
+          
+          // 本棚の中心位置
+          const shelfCenterX = Math.cos(angle) * 15.2;
+          const shelfCenterZ = Math.sin(angle) * 15.2;
+          
+          // ローカル座標をワールド座標に変換
+          // 本棚のローカルX軸は接線方向、ローカルZ軸は法線方向（中心向き）
+          book.position.x = shelfCenterX - sinA * localX - cosA * localZ;
+          book.position.z = shelfCenterZ + cosA * localX - sinA * localZ;
+          book.position.y = shelfY;
+          book.rotation.y = -angle;
+          book.castShadow = true;
+          book.receiveShadow = true;
+          scene.add(book);
+        }
+      }
+    }
+
+    // ヒントクリスタル（各役割の色でカラフルに）
+    const hintColors = [
+      { x: -8, z: -8, color: '#ffd700', name: 'リーダー', height: 0.8 },      // 金
+      { x: 8, z: -8, color: '#ff6b6b', name: '解読員', height: 0.8 },        // 赤
+      { x: -10, z: 0, color: '#4ecdc4', name: '調査員', height: 0.8 },       // 青緑
+      { x: 10, z: 0, color: '#95e1d3', name: '分析員', height: 0.8 },        // 薄緑
+      { x: 0, z: -12, color: '#dda0dd', name: '通信員', height: 0.8 }        // 紫
+    ];
+
+    hintObjectsRef.current = [];
+
+    hintColors.forEach((pos, idx) => {
+      const crystalColor = pos.color;
+      
+      const pedestalGeometry = new THREE.CylinderGeometry(0.8, 1, 0.5, 8);
+      const pedestalMaterial = new THREE.MeshStandardMaterial({
+        color: 0x2a3550,
+        metalness: 0.7,
+        roughness: 0.3
+      });
+      const pedestal = new THREE.Mesh(pedestalGeometry, pedestalMaterial);
+      pedestal.position.set(pos.x, 0.25, pos.z);
+      pedestal.castShadow = true;
+      pedestal.receiveShadow = true;
+      scene.add(pedestal);
+
+      const crystalGeometry = new THREE.OctahedronGeometry(0.5, 0);
+      const crystalMaterial = new THREE.MeshStandardMaterial({
+        color: crystalColor,
+        emissive: crystalColor,
+        emissiveIntensity: 1,
+        metalness: 0.8,
+        roughness: 0.2,
+        transparent: true,
+        opacity: 0.9
+      });
+      const crystal = new THREE.Mesh(crystalGeometry, crystalMaterial);
+      crystal.position.set(pos.x, pos.height, pos.z);
+      crystal.castShadow = true;
+      crystal.userData = { 
+        type: 'hint', 
+        id: idx, 
+        name: pos.name,
+        baseY: pos.height 
+      };
+      scene.add(crystal);
+      
+      hintObjectsRef.current.push({
+        mesh: crystal,
+        position: { x: pos.x, z: pos.z },
+        type: 'hint',
+        id: idx
+      });
+
+      const glowGeometry = new THREE.SphereGeometry(0.7, 16, 16);
+      const glowMaterial = new THREE.MeshBasicMaterial({
+        color: crystalColor,
+        transparent: true,
+        opacity: 0.2
+      });
+      const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+      glow.position.copy(crystal.position);
+      glow.userData = { isGlow: true, crystalId: idx };
+      scene.add(glow);
+
+      const crystalLight = new THREE.PointLight(crystalColor, 1, 8);
+      crystalLight.position.copy(crystal.position);
+      scene.add(crystalLight);
+
+      const runeGeometry = new THREE.RingGeometry(1, 1.1, 32);
+      const runeMaterial = new THREE.MeshBasicMaterial({
+        color: crystalColor,
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide
+      });
+      const rune = new THREE.Mesh(runeGeometry, runeMaterial);
+      rune.rotation.x = -Math.PI / 2;
+      rune.position.set(pos.x, 0.01, pos.z);
+      rune.userData = { isRune: true, crystalId: idx };
+      scene.add(rune);
+    });
+
+    // 中央コンソール - 美しいTorusKnotオブジェクト
+    const consoleBaseGeometry = new THREE.CylinderGeometry(2, 2.5, 0.4, 32);
+    const consoleBaseMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1a2540,
+      metalness: 0.9,
+      roughness: 0.1
+    });
+    const consoleBase = new THREE.Mesh(consoleBaseGeometry, consoleBaseMaterial);
+    consoleBase.position.set(0, 0.2, 0);
+    consoleBase.castShadow = true;
+    consoleBase.receiveShadow = true;
+    scene.add(consoleBase);
+
+    // 台座の装飾リング
+    const baseRingGeometry = new THREE.TorusGeometry(2.2, 0.08, 16, 64);
+    const baseRingMaterial = new THREE.MeshStandardMaterial({
+      color: 0x00ffff,
+      emissive: 0x00ffff,
+      emissiveIntensity: 0.8,
+      metalness: 1.0,
+      roughness: 0.0
+    });
+    const baseRing = new THREE.Mesh(baseRingGeometry, baseRingMaterial);
+    baseRing.position.set(0, 0.4, 0);
+    baseRing.rotation.x = Math.PI / 2;
+    scene.add(baseRing);
+
+    // メインのTorusKnotオブジェクト
+    const torusKnotGeometry = new THREE.TorusKnotGeometry(1, 0.35, 128, 32, 2, 3);
+    const torusKnotMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      metalness: 1.0,
+      roughness: 0.0,
+      envMapIntensity: 1.5
+    });
+    const torusKnot = new THREE.Mesh(torusKnotGeometry, torusKnotMaterial);
+    torusKnot.position.set(0, 2.2, 0);
+    torusKnot.castShadow = true;
+    torusKnot.userData = { type: 'puzzle', id: 0, isTorusKnot: true };
+    scene.add(torusKnot);
+
+    consoleRef.current = {
+      position: { x: 0, z: 0 },
+      type: 'puzzle',
+      id: 0
+    };
+
+    // TorusKnotの周りの発光エフェクト
+    const glowSphereGeometry = new THREE.SphereGeometry(1.8, 32, 32);
+    const glowSphereMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.1,
+      side: THREE.BackSide
+    });
+    const glowSphere = new THREE.Mesh(glowSphereGeometry, glowSphereMaterial);
+    glowSphere.position.set(0, 2.2, 0);
+    glowSphere.userData = { isConsoleGlow: true };
+    scene.add(glowSphere);
+
+    // 浮遊する外側リング（3つ）
+    const orbitRingGeometry = new THREE.TorusGeometry(1.8, 0.03, 16, 64);
+    const orbitRingMaterial = new THREE.MeshStandardMaterial({
+      color: 0x00ffff,
+      emissive: 0x00ffff,
+      emissiveIntensity: 1.2,
+      metalness: 1.0,
+      roughness: 0.0,
+      transparent: true,
+      opacity: 0.9
+    });
+    
+    const orbitRing1 = new THREE.Mesh(orbitRingGeometry, orbitRingMaterial);
+    orbitRing1.position.set(0, 2.2, 0);
+    orbitRing1.userData = { isOrbitRing: true, id: 0 };
+    scene.add(orbitRing1);
+
+    const orbitRing2 = new THREE.Mesh(orbitRingGeometry, orbitRingMaterial.clone());
+    orbitRing2.position.set(0, 2.2, 0);
+    orbitRing2.userData = { isOrbitRing: true, id: 1 };
+    scene.add(orbitRing2);
+
+    const orbitRing3 = new THREE.Mesh(orbitRingGeometry, orbitRingMaterial.clone());
+    orbitRing3.position.set(0, 2.2, 0);
+    orbitRing3.userData = { isOrbitRing: true, id: 2 };
+    scene.add(orbitRing3);
+
+    // 中心から放射する光のビーム（柱）
+    const beamGeometry = new THREE.CylinderGeometry(0.05, 0.05, 6, 8);
+    const beamMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.3
+    });
+    const beam = new THREE.Mesh(beamGeometry, beamMaterial);
+    beam.position.set(0, 2.2, 0);
+    scene.add(beam);
+
+    // 環境マップ風のキューブマップ（疑似反射用）
+    const cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256);
+    cubeRenderTarget.texture.type = THREE.HalfFloatType;
+    
+    // ポイントライト（TorusKnotを照らす）
+    const torusLight = new THREE.PointLight(0x00ffff, 2, 10);
+    torusLight.position.set(0, 2.2, 0);
+    scene.add(torusLight);
+
+    const torusLight2 = new THREE.PointLight(0xff00ff, 1, 8);
+    torusLight2.position.set(2, 3, 2);
+    scene.add(torusLight2);
+
+    const torusLight3 = new THREE.PointLight(0xffff00, 1, 8);
+    torusLight3.position.set(-2, 3, -2);
+    scene.add(torusLight3);
+
+    // パーティクル
+    const particleCount = 200;
+    const particleGeometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const velocities = [];
+
+    for (let i = 0; i < particleCount; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * 40;
+      positions[i * 3 + 1] = Math.random() * 10;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 40;
+      velocities.push({
+        x: (Math.random() - 0.5) * 0.02,
+        y: (Math.random() - 0.5) * 0.02,
+        z: (Math.random() - 0.5) * 0.02
+      });
+    }
+    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const particleMaterial = new THREE.PointsMaterial({
+      color: 0x00ffff,
+      size: 0.1,
+      transparent: true,
+      opacity: 0.6
+    });
+    const particles = new THREE.Points(particleGeometry, particleMaterial);
+    scene.add(particles);
+
+    // イベントリスナー
+    const handleKeyDown = (e) => {
+      keysRef.current[e.key.toLowerCase()] = true;
+      if (e.key === 'Escape') {
+        setShowMessage(false);
+        setShowHintModal(false);
+        setShowPuzzleModal(false);
+        setShowVoxelPuzzle(false);
+      }
+    };
+
+    const handleKeyUp = (e) => {
+      keysRef.current[e.key.toLowerCase()] = false;
+    };
+
+    const handleMouseDown = (e) => {
+      isMouseDownRef.current = true;
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+      e.preventDefault();
+    };
+
+    const handleMouseUp = () => {
+      isMouseDownRef.current = false;
+    };
+
+    const handleMouseMove = (e) => {
+      if (isMouseDownRef.current) {
+        const deltaX = e.clientX - lastMouseRef.current.x;
+        const deltaY = e.clientY - lastMouseRef.current.y;
+        
+        const sensitivity = 0.005;
+        playerRef.current.rotation -= deltaX * sensitivity;
+        playerRef.current.rotationX -= deltaY * sensitivity;
+        playerRef.current.rotationX = Math.max(-1.5, Math.min(1.5, playerRef.current.rotationX));
+        
+        lastMouseRef.current = { x: e.clientX, y: e.clientY };
+      }
+    };
+
+    const handleResize = () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    renderer.domElement.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('resize', handleResize);
+
+    // アニメーションループ
+    const animate = () => {
+      animationIdRef.current = requestAnimationFrame(animate);
+
+      const time = Date.now() * 0.001;
+
+      // パーティクルアニメーション
+      const positions = particles.geometry.attributes.position.array;
+      for (let i = 0; i < particleCount; i++) {
+        positions[i * 3] += velocities[i].x;
+        positions[i * 3 + 1] += velocities[i].y;
+        positions[i * 3 + 2] += velocities[i].z;
+
+        if (Math.abs(positions[i * 3]) > 20) velocities[i].x *= -1;
+        if (positions[i * 3 + 1] > 15 || positions[i * 3 + 1] < 0) velocities[i].y *= -1;
+        if (Math.abs(positions[i * 3 + 2]) > 20) velocities[i].z *= -1;
+      }
+      particles.geometry.attributes.position.needsUpdate = true;
+
+      // オブジェクトアニメーション
+      scene.traverse((object) => {
+        if (object.userData.type === 'hint' && object.userData.baseY) {
+          object.position.y = object.userData.baseY + Math.sin(time * 2 + object.userData.id) * 0.2;
+          object.rotation.y = time * 0.5;
+        }
+        if (object.userData.isGlow) {
+          const scale = 1 + Math.sin(time * 3 + object.userData.crystalId) * 0.1;
+          object.scale.set(scale, scale, scale);
+        }
+        if (object.userData.isRune) {
+          object.rotation.z = time * 0.3 * (object.userData.crystalId % 2 === 0 ? 1 : -1);
+        }
+        // TorusKnotの回転アニメーション
+        if (object.userData.isTorusKnot) {
+          object.rotation.y = time * 0.3;
+          object.rotation.x = time * 0.2;
+        }
+        // コンソールのグローエフェクト
+        if (object.userData.isConsoleGlow) {
+          const scale = 1 + Math.sin(time * 2) * 0.15;
+          object.scale.set(scale, scale, scale);
+          object.material.opacity = 0.08 + Math.sin(time * 3) * 0.05;
+        }
+        // オービットリングの回転
+        if (object.userData.isOrbitRing) {
+          const id = object.userData.id;
+          if (id === 0) {
+            object.rotation.x = time * 0.8;
+            object.rotation.y = time * 0.3;
+          } else if (id === 1) {
+            object.rotation.x = Math.PI / 3;
+            object.rotation.y = time * 0.6;
+            object.rotation.z = time * 0.4;
+          } else {
+            object.rotation.x = -Math.PI / 3;
+            object.rotation.y = -time * 0.5;
+            object.rotation.z = time * 0.3;
+          }
+        }
+      });
+
+      // プレイヤー移動
+      const speed = 0.15;
+      const player = playerRef.current;
+
+      if (keysRef.current['w']) {
+        player.x -= Math.sin(player.rotation) * speed;
+        player.z -= Math.cos(player.rotation) * speed;
+      }
+      if (keysRef.current['s']) {
+        player.x += Math.sin(player.rotation) * speed;
+        player.z += Math.cos(player.rotation) * speed;
+      }
+      if (keysRef.current['a']) {
+        player.x -= Math.cos(player.rotation) * speed;
+        player.z += Math.sin(player.rotation) * speed;
+      }
+      if (keysRef.current['d']) {
+        player.x += Math.cos(player.rotation) * speed;
+        player.z -= Math.sin(player.rotation) * speed;
+      }
+
+      // 境界制限
+      const distFromCenter = Math.sqrt(player.x * player.x + player.z * player.z);
+      if (distFromCenter > 15) {
+        const angle = Math.atan2(player.z, player.x);
+        player.x = Math.cos(angle) * 15;
+        player.z = Math.sin(angle) * 15;
+      }
+
+      // 近くのオブジェクト検出
+      let nearestObject = null;
+      let nearestDist = 3;
+
+      hintObjectsRef.current.forEach(hint => {
+        const dx = player.x - hint.position.x;
+        const dz = player.z - hint.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestObject = hint;
+        }
+      });
+
+      if (consoleRef.current) {
+        const dx = player.x - consoleRef.current.position.x;
+        const dz = player.z - consoleRef.current.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestObject = consoleRef.current;
+        }
+      }
+
+      setNearbyObject(nearestObject);
+
+      camera.position.x = player.x;
+      camera.position.z = player.z;
+      camera.rotation.order = 'YXZ';
+      camera.rotation.y = player.rotation;
+      camera.rotation.x = player.rotationX;
+
+      renderer.render(scene, camera);
+    };
+
+    animate();
+
+    return () => {
+      if (animationIdRef.current) {
+        cancelAnimationFrame(animationIdRef.current);
+      }
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      renderer.domElement.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('resize', handleResize);
+      if (mountRef.current && renderer.domElement) {
+        mountRef.current.removeChild(renderer.domElement);
+      }
+      renderer.dispose();
+    };
+  }, [screen]);
+
+  // メッセージ自動非表示
+  useEffect(() => {
+    if (showMessage && screen === 'game') {
+      const timer = setTimeout(() => setShowMessage(false), 30000);
+      return () => clearTimeout(timer);
+    }
+  }, [showMessage, screen]);
+
+  // ロビーデータ定期更新
+  useEffect(() => {
+    if (screen === 'lobby') {
+      const interval = setInterval(fetchLobbyData, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [screen, teamNumber, myPlayerId, selectedRole]);
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // エントリー画面
+  if (screen === 'entry') {
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center p-4">
+        <div className="bg-gray-800 bg-opacity-90 p-8 rounded-lg shadow-2xl max-w-md w-full border border-cyan-500">
+          <h1 className="text-4xl font-bold text-cyan-400 mb-2 text-center">サイバー研究所</h1>
+          <h2 className="text-2xl text-cyan-300 mb-8 text-center">脱出ゲーム</h2>
+          
+          <div className="mb-6">
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setJoinMode('create')}
+                className={`flex-1 py-2 rounded transition ${joinMode === 'create' ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-300'}`}
+              >
+                チーム作成
+              </button>
+              <button
+                onClick={() => setJoinMode('join')}
+                className={`flex-1 py-2 rounded transition ${joinMode === 'join' ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-300'}`}
+              >
+                チーム参加
+              </button>
+            </div>
+
+            {joinMode === 'create' ? (
+              <>
+                <label className="block text-cyan-300 mb-2">チーム名</label>
+                <input
+                  type="text"
+                  value={teamName}
+                  onChange={(e) => setTeamName(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleCreateTeam()}
+                  className="w-full px-4 py-3 bg-gray-700 text-white rounded border border-cyan-500 focus:outline-none focus:border-cyan-400 mb-4"
+                  placeholder="チーム名を入力"
+                />
+                <label className="block text-cyan-300 mb-2">チーム人数</label>
+                <div className="grid grid-cols-4 gap-2 mb-4">
+                  {[2, 3, 4, 5].map(num => (
+                    <button
+                      key={num}
+                      onClick={() => setTeamSize(num)}
+                      className={`py-3 rounded-lg text-xl font-bold transition ${
+                        teamSize === num 
+                          ? 'bg-cyan-600 text-white ring-2 ring-cyan-400' 
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      {num}人
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={handleCreateTeam}
+                  className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded transition"
+                >
+                  チーム作成
+                </button>
+              </>
+            ) : (
+              <>
+                <label className="block text-cyan-300 mb-2">チーム番号（4桁）</label>
+                <input
+                  type="text"
+                  value={teamNumber}
+                  onChange={(e) => setTeamNumber(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  onKeyPress={(e) => e.key === 'Enter' && handleJoinTeam()}
+                  className="w-full px-4 py-3 bg-gray-700 text-white text-center text-3xl tracking-widest font-mono rounded border border-cyan-500 focus:outline-none focus:border-cyan-400 mb-4"
+                  placeholder="1234"
+                  maxLength="4"
+                />
+                <button
+                  onClick={handleJoinTeam}
+                  className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded transition"
+                >
+                  チーム参加
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="mt-6 text-cyan-300 text-sm space-y-1">
+            <p>• 制限時間: 20分</p>
+            <p>• チーム人数: 2〜5名</p>
+            <p>• 操作: WASD移動、マウス視点</p>
+          </div>
+          
+          {/* 管理者ログイン */}
+          <div className="mt-8 pt-6 border-t border-gray-700">
+            <p className="text-gray-500 text-xs mb-2 text-center">管理者用</p>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && enterAdminScreen()}
+                className="flex-1 px-3 py-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:border-gray-500 text-sm"
+                placeholder="管理者パスワード"
+              />
+              <button
+                onClick={enterAdminScreen}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition text-sm"
+              >
+                管理画面
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 管理画面
+  if (screen === 'admin') {
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-slate-900 to-gray-900 p-4 overflow-auto">
+        <div className="max-w-6xl mx-auto">
+          {/* ヘッダー */}
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-3xl font-bold text-cyan-400">🎮 管理画面</h1>
+            <div className="flex gap-4">
+              <button
+                onClick={fetchAllTeams}
+                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded transition"
+              >
+                🔄 更新
+              </button>
+              <button
+                onClick={resetAllTeams}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded transition"
+              >
+                🗑️ 全削除
+              </button>
+              <button
+                onClick={exitAdminScreen}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded transition"
+              >
+                ← 戻る
+              </button>
+            </div>
+          </div>
+          
+          {/* 統計サマリー */}
+          <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="bg-gray-800 p-4 rounded-lg border border-cyan-500">
+              <p className="text-gray-400 text-sm">総チーム数</p>
+              <p className="text-3xl font-bold text-white">{allTeams.length}</p>
+            </div>
+            <div className="bg-gray-800 p-4 rounded-lg border border-green-500">
+              <p className="text-gray-400 text-sm">クリア済み</p>
+              <p className="text-3xl font-bold text-green-400">
+                {allTeams.filter(t => t.completed).length}
+              </p>
+            </div>
+            <div className="bg-gray-800 p-4 rounded-lg border border-yellow-500">
+              <p className="text-gray-400 text-sm">プレイ中</p>
+              <p className="text-3xl font-bold text-yellow-400">
+                {allTeams.filter(t => t.startTime && !t.completed && getTeamTimeLeft(t) > 0).length}
+              </p>
+            </div>
+            <div className="bg-gray-800 p-4 rounded-lg border border-red-500">
+              <p className="text-gray-400 text-sm">時間切れ</p>
+              <p className="text-3xl font-bold text-red-400">
+                {allTeams.filter(t => t.startTime && !t.completed && getTeamTimeLeft(t) <= 0).length}
+              </p>
+            </div>
+          </div>
+          
+          {/* ランキング（クリア済みチーム） */}
+          {allTeams.filter(t => t.completed).length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-cyan-400 mb-3">🏆 ランキング</h2>
+              <div className="bg-gray-800 rounded-lg border border-cyan-500 overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-gray-700">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-cyan-300">順位</th>
+                      <th className="px-4 py-3 text-left text-cyan-300">チーム名</th>
+                      <th className="px-4 py-3 text-left text-cyan-300">クリアタイム</th>
+                      <th className="px-4 py-3 text-left text-cyan-300">メンバー数</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allTeams.filter(t => t.completed).map((team, idx) => (
+                      <tr key={team.number} className={idx % 2 === 0 ? 'bg-gray-800' : 'bg-gray-750'}>
+                        <td className="px-4 py-3">
+                          <span className={`text-2xl ${idx === 0 ? 'text-yellow-400' : idx === 1 ? 'text-gray-300' : idx === 2 ? 'text-amber-600' : 'text-gray-500'}`}>
+                            {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}位`}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-white font-bold">{team.name}</td>
+                        <td className="px-4 py-3 text-green-400 font-mono text-lg">
+                          {formatTime(team.completionTime || 0)}
+                        </td>
+                        <td className="px-4 py-3 text-gray-300">{team.members?.length || 0}名</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          
+          {/* 全チーム一覧 */}
+          <h2 className="text-xl font-bold text-cyan-400 mb-3">📋 全チーム状況</h2>
+          <div className="grid gap-4">
+            {allTeams.length === 0 ? (
+              <div className="bg-gray-800 p-8 rounded-lg border border-gray-700 text-center">
+                <p className="text-gray-400">まだチームが作成されていません</p>
+              </div>
+            ) : (
+              allTeams.map(team => {
+                const timeRemaining = getTeamTimeLeft(team);
+                const isPlaying = team.startTime && !team.completed && timeRemaining > 0;
+                const isTimeout = team.startTime && !team.completed && timeRemaining <= 0;
+                
+                return (
+                  <div
+                    key={team.number}
+                    className={`bg-gray-800 p-4 rounded-lg border ${
+                      team.completed ? 'border-green-500' : isTimeout ? 'border-red-500' : isPlaying ? 'border-yellow-500' : 'border-gray-600'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center gap-3">
+                          <h3 className="text-lg font-bold text-white">{team.name}</h3>
+                          <span className="text-gray-500 text-sm">#{team.number}</span>
+                          {team.completed && (
+                            <span className="px-2 py-1 bg-green-500 bg-opacity-20 text-green-400 text-xs rounded">
+                              ✓ クリア
+                            </span>
+                          )}
+                          {isTimeout && (
+                            <span className="px-2 py-1 bg-red-500 bg-opacity-20 text-red-400 text-xs rounded">
+                              時間切れ
+                            </span>
+                          )}
+                          {isPlaying && (
+                            <span className="px-2 py-1 bg-yellow-500 bg-opacity-20 text-yellow-400 text-xs rounded animate-pulse">
+                              プレイ中
+                            </span>
+                          )}
+                          {!team.startTime && (
+                            <span className="px-2 py-1 bg-gray-500 bg-opacity-20 text-gray-400 text-xs rounded">
+                              待機中
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-gray-400 text-sm mt-1">
+                          メンバー: {team.members?.length || 0}名
+                        </p>
+                      </div>
+                      
+                      <div className="text-right">
+                        {team.completed ? (
+                          <div>
+                            <p className="text-gray-400 text-xs">クリアタイム</p>
+                            <p className="text-2xl font-bold text-green-400 font-mono">
+                              {formatTime(team.completionTime || 0)}
+                            </p>
+                          </div>
+                        ) : team.startTime ? (
+                          <div>
+                            <p className="text-gray-400 text-xs">残り時間</p>
+                            <p className={`text-2xl font-bold font-mono ${timeRemaining < 60 ? 'text-red-400' : 'text-cyan-400'}`}>
+                              {formatTime(timeRemaining)}
+                            </p>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    
+                    {/* 進捗バー */}
+                    <div className="mt-3">
+                      <div className="flex justify-between text-xs text-gray-400 mb-1">
+                        <span>ヒント進捗</span>
+                        <span>{team.hintsFound?.length || 0} / 5</span>
+                      </div>
+                      <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-cyan-500 to-green-500 transition-all duration-500"
+                          style={{ width: `${((team.hintsFound?.length || 0) / 5) * 100}%` }}
+                        />
+                      </div>
+                      
+                      {/* ヒント詳細 */}
+                      <div className="flex gap-2 mt-2">
+                        {[0, 1, 2, 3, 4].map(idx => (
+                          <div
+                            key={idx}
+                            className={`w-8 h-8 rounded flex items-center justify-center text-xs ${
+                              team.hintsFound?.includes(idx)
+                                ? 'bg-green-500 bg-opacity-30 text-green-400 border border-green-500'
+                                : 'bg-gray-700 text-gray-500 border border-gray-600'
+                            }`}
+                            title={roles[idx]?.name}
+                          >
+                            {team.hintsFound?.includes(idx) ? '✓' : idx + 1}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+          
+          {/* フッター情報 */}
+          <div className="mt-6 text-center text-gray-500 text-sm">
+            <p>5秒ごとに自動更新 | パスワード: admin123</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 待機室（チーム番号共有用）
+  if (screen === 'waiting') {
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center p-4">
+        <div className="bg-gray-800 bg-opacity-90 p-8 rounded-lg shadow-2xl max-w-md w-full border border-cyan-500">
+          <h1 className="text-3xl font-bold text-cyan-400 mb-6 text-center">待機室</h1>
+          
+          <div className="bg-gray-900 p-6 rounded-lg mb-6 border border-cyan-500">
+            <div className="text-center mb-4">
+              <p className="text-cyan-300 mb-2">チーム名</p>
+              <p className="text-2xl font-bold text-white">{teamName}</p>
+            </div>
+            <div className="text-center mb-4">
+              <p className="text-cyan-300 mb-1">チーム人数</p>
+              <p className="text-xl font-bold text-cyan-400">{teamSize}人</p>
+            </div>
+            <div className="text-center">
+              <p className="text-cyan-300 mb-3">チーム番号（これを伝えてね！）</p>
+              <p className="text-7xl font-bold text-cyan-400 tracking-widest font-mono">{teamNumber}</p>
+            </div>
+          </div>
+
+          <button
+            onClick={enterLobby}
+            className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded transition mb-4"
+          >
+            ロビーに入る →
+          </button>
+
+          <button
+            onClick={() => setScreen('entry')}
+            className="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded transition"
+          >
+            ← 戻る
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ロビー画面（役割選択）
+  if (screen === 'lobby') {
+    const memberCount = lobbyData?.members?.length || 0;
+    const maxMembers = lobbyData?.maxMembers || teamSize;
+    const availableRoles = getRolesForTeamSize(maxMembers);
+    const allMembersJoined = memberCount >= maxMembers;
+    
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center p-4">
+        <div className="bg-gray-800 bg-opacity-90 p-6 rounded-lg shadow-2xl max-w-2xl w-full border border-cyan-500">
+          {/* ヘッダー */}
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h1 className="text-2xl font-bold text-cyan-400">{teamName}</h1>
+              <p className="text-gray-400 text-sm">#{teamNumber}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-gray-400 text-sm">参加者</p>
+              <p className={`text-2xl font-bold ${allMembersJoined ? 'text-green-400' : 'text-white'}`}>
+                {memberCount}/{maxMembers}名
+              </p>
+            </div>
+          </div>
+          
+          {/* メンバー待ち or タイマー */}
+          {!allMembersJoined ? (
+            <div className="text-center p-6 bg-gray-900 rounded-lg mb-6 border border-yellow-500">
+              <p className="text-yellow-400 text-xl mb-2">メンバー待機中...</p>
+              <p className="text-gray-400">全員揃ったら役割を選べます</p>
+            </div>
+          ) : (
+            <div className={`text-center p-4 rounded-lg mb-6 ${roleSelectTimer <= 10 ? 'bg-red-900 border-red-500' : 'bg-gray-900 border-cyan-500'} border`}>
+              <p className="text-gray-400 text-sm mb-1">役割決めタイム</p>
+              <p className={`text-4xl font-bold font-mono ${roleSelectTimer <= 10 ? 'text-red-400 animate-pulse' : 'text-cyan-400'}`}>
+                {roleSelectTimer}秒
+              </p>
+              <p className="text-gray-500 text-xs mt-1">
+                時間切れで未選択の人は自動割り当て
+              </p>
+            </div>
+          )}
+          
+          {/* 役割選択カード */}
+          <div className="mb-6">
+            <p className="text-cyan-300 mb-3 text-center">
+              {allMembersJoined ? '👥 チームで相談して役割を決めてください' : '👥 メンバーが揃うまでお待ちください'}
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {availableRoles.map((r, idx) => {
+                const takenBy = lobbyData?.members?.find(m => m.roleIndex === idx);
+                const isMySelection = selectedRole === idx;
+                const isTaken = takenBy && !isMySelection;
+                
+                return (
+                  <div
+                    key={r.id}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      isMySelection 
+                        ? 'border-green-500 bg-green-900 bg-opacity-30' 
+                        : isTaken 
+                          ? 'border-gray-600 bg-gray-800 opacity-60'
+                          : 'border-gray-600 bg-gray-800 hover:border-cyan-400'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div 
+                        className="w-12 h-12 rounded-full flex items-center justify-center text-2xl"
+                        style={{ backgroundColor: r.color + '40', border: `2px solid ${r.color}` }}
+                      >
+                        {r.icon}
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-bold text-white">{r.name}</h3>
+                        <p className="text-gray-400 text-xs">Role {idx + 1}</p>
+                      </div>
+                      
+                      {isMySelection ? (
+                        <span className="px-3 py-1 bg-green-600 text-white text-sm rounded">
+                          ✓ 選択中
+                        </span>
+                      ) : isTaken ? (
+                        <span className="px-3 py-1 bg-gray-600 text-gray-300 text-sm rounded">
+                          選択済み
+                        </span>
+                      ) : !allMembersJoined ? (
+                        <span className="px-3 py-1 bg-gray-700 text-gray-500 text-sm rounded">
+                          待機中
+                        </span>
+                      ) : selectedRole === null ? (
+                        <button
+                          onClick={() => selectRole(idx)}
+                          className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded transition"
+                        >
+                          選択
+                        </button>
+                      ) : (
+                        <span className="px-3 py-1 bg-gray-700 text-gray-400 text-sm rounded">
+                          ---
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          
+          {/* メンバー状況 */}
+          <div className="bg-gray-900 p-4 rounded-lg mb-4">
+            <p className="text-gray-400 text-sm mb-2">メンバー状況</p>
+            <div className="flex flex-wrap gap-2">
+              {lobbyData?.members?.map((member, idx) => {
+                const memberRoles = getRolesForTeamSize(maxMembers);
+                return (
+                  <div 
+                    key={member.oderId || idx}
+                    className={`px-3 py-1 rounded-full text-sm ${
+                      member.oderId === myPlayerId 
+                        ? 'bg-cyan-600 text-white' 
+                        : member.roleIndex !== undefined
+                          ? 'bg-green-600 bg-opacity-50 text-green-300'
+                          : 'bg-gray-700 text-gray-400'
+                    }`}
+                  >
+                    {member.oderId === myPlayerId ? '自分' : `Player ${idx + 1}`}
+                    {member.roleIndex !== undefined && ` (${memberRoles[member.roleIndex]?.icon})`}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          
+          {/* アクションボタン */}
+          <div className="flex gap-3">
+            <button
+              onClick={exitLobby}
+              className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded transition"
+            >
+              ← 戻る
+            </button>
+            <button
+              onClick={handleStartGame}
+              disabled={selectedRole === null || !allMembersJoined}
+              className={`flex-1 font-bold py-3 rounded transition ${
+                selectedRole !== null && allMembersJoined
+                  ? 'bg-green-600 hover:bg-green-500 text-white'
+                  : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              {!allMembersJoined ? 'メンバー待ち...' : selectedRole !== null ? 'ゲーム開始！' : '役割を選んでください'}
+            </button>
+          </div>
+          
+          {/* テスト用ボタン */}
+          {!allMembersJoined && (
+            <button
+              onClick={forceFullTeam}
+              className="w-full mt-3 bg-yellow-600 hover:bg-yellow-500 text-white py-2 rounded text-sm"
+            >
+              🧪 テスト：ダミーメンバー追加（1人でテスト）
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ゲーム画面
+  if (screen === 'game') {
+    return (
+      <div className="relative w-full h-screen overflow-hidden">
+        <div ref={mountRef} className="w-full h-full" />
+        
+        {/* タイマー */}
+        <div className="absolute top-4 right-4 bg-black bg-opacity-70 px-6 py-3 rounded border border-cyan-500">
+          <div className={`text-2xl font-bold ${timeLeft < 60 ? 'text-red-400 animate-pulse' : 'text-cyan-400'}`}>
+            {formatTime(timeLeft)}
+          </div>
+        </div>
+
+        {/* チーム情報 */}
+        <div className="absolute top-4 left-4 bg-black bg-opacity-70 px-6 py-3 rounded border border-cyan-500">
+          <div className="text-cyan-400 font-bold">{teamName}</div>
+          <div className="text-cyan-300 text-sm">#{teamNumber}</div>
+          {assignedRoles.length > 0 && (
+            <div className="mt-2 text-sm">
+              {assignedRoles.map((r, i) => (
+                <span key={r.id} className="inline-block px-2 py-1 rounded mr-1 mb-1" style={{ backgroundColor: r.color + '40', color: r.color }}>
+                  {r.name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ヒント進捗 */}
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-70 px-4 py-2 rounded border border-cyan-500">
+          <div className="text-cyan-300 text-sm">ヒント: {hintsFound.length} / 5</div>
+        </div>
+
+        {/* インタラクションUI */}
+        {nearbyObject && !showHintModal && !showPuzzleModal && (
+          <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-80 px-6 py-3 rounded border-2 border-cyan-400 animate-pulse">
+            <p className="text-cyan-400 text-lg font-bold text-center">
+              {nearbyObject.type === 'hint' ? (
+                <>
+                  <span className="text-2xl">E</span> を押して調べる
+                  {hintsFound.includes(nearbyObject.id) && <span className="ml-2 text-green-400">（取得済み）</span>}
+                </>
+              ) : (
+                <>
+                  <span className="text-2xl">E</span> を押してコンソールを操作
+                </>
+              )}
+            </p>
+          </div>
+        )}
+
+        {/* 役割メッセージ（電光掲示板スタイル） */}
+        {showMessage && role && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-90 z-50">
+            <div className="max-w-3xl w-full mx-4">
+              <div className="bg-gray-900 border-2 rounded-lg p-8 shadow-2xl" style={{ borderColor: role.color }}>
+                <div className="flex items-center justify-center gap-3 mb-2">
+                  <span className="text-4xl">{role.icon}</span>
+                  <h2 className="text-3xl font-bold" style={{ color: role.color }}>
+                    {role.name}
+                  </h2>
+                </div>
+                <p className="text-gray-400 text-center mb-6">シークレットメッセージ - メモを取ってください！</p>
+                
+                {/* 電光掲示板エリア */}
+                <div className="bg-black rounded-lg p-4 mb-6 overflow-hidden border border-gray-700">
+                  <style>
+                    {`
+                      @keyframes scrollText {
+                        0% { transform: translateX(100%); }
+                        100% { transform: translateX(-100%); }
+                      }
+                    `}
+                  </style>
+                  <div className="space-y-4">
+                    {getSecretMessage(teamSize, role.id).map((line, idx) => (
+                      <div key={idx} className="relative h-8 overflow-hidden border-b border-gray-800">
+                        <div 
+                          style={{ 
+                            color: role.color,
+                            textShadow: `0 0 10px ${role.color}`,
+                            animation: `scrollText 8s linear infinite`,
+                            animationDelay: `${idx * 0.5}s`,
+                            whiteSpace: 'nowrap',
+                            position: 'absolute',
+                            fontSize: '1.25rem',
+                            fontFamily: 'monospace',
+                            fontWeight: 'bold'
+                          }}
+                        >
+                          ● {line} ● {line} ● {line} ●
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                <p className="text-gray-500 text-sm text-center mb-4">※ 一人では絶対に解けません。仲間と情報を共有しよう！</p>
+                
+                <button
+                  onClick={() => setShowMessage(false)}
+                  className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded transition"
+                >
+                  3D空間に入る →
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ヒントモーダル */}
+        {showHintModal && currentHint && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-80 z-50">
+            <div className="max-w-lg w-full mx-4">
+              <div className="bg-gray-900 border-2 rounded-lg p-6 shadow-2xl" style={{ borderColor: currentHint.color }}>
+                <h2 className="text-2xl font-bold mb-4 text-center" style={{ color: currentHint.color }}>
+                  {currentHint.title}
+                </h2>
+                <div className="bg-black p-4 rounded mb-4">
+                  <pre className="text-lg font-mono whitespace-pre-wrap" style={{ color: currentHint.color }}>
+                    {currentHint.message}
+                  </pre>
+                </div>
+                <button
+                  onClick={() => setShowHintModal(false)}
+                  className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded transition"
+                >
+                  閉じる (ESC)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* パズルモーダル */}
+        {showPuzzleModal && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-80 z-50">
+            <div className="max-w-2xl w-full mx-4">
+              <div className="bg-gray-900 border-2 border-cyan-500 rounded-lg p-6 shadow-2xl">
+                <h2 className="text-2xl font-bold mb-4 text-center text-cyan-400">
+                  🔐 中央コンソール - 最終認証
+                </h2>
+                
+                <div className="bg-gray-800 p-4 rounded mb-4">
+                  <p className="text-gray-300 text-center mb-2">
+                    全てのヒントを集めてから最終パズルに挑戦してください
+                  </p>
+                  <div className="flex justify-center gap-2 mb-4">
+                    {[0, 1, 2, 3, 4].map(idx => (
+                      <div
+                        key={idx}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${
+                          hintsFound.includes(idx) 
+                            ? 'border-green-400 bg-green-400 bg-opacity-20' 
+                            : 'border-gray-600 bg-gray-700'
+                        }`}
+                        style={{ borderColor: hintsFound.includes(idx) ? roles[idx].color : undefined }}
+                      >
+                        {hintsFound.includes(idx) ? '✓' : '?'}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-cyan-400 text-center text-lg font-bold">
+                    収集済み: {hintsFound.length} / 5
+                  </p>
+                </div>
+
+                {puzzleError && (
+                  <p className="text-yellow-400 text-center mb-4">{puzzleError}</p>
+                )}
+
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => {
+                      setShowPuzzleModal(false);
+                      setPuzzleError('');
+                    }}
+                    className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded transition"
+                  >
+                    戻る (ESC)
+                  </button>
+                  <button
+                    onClick={startFinalPuzzle}
+                    disabled={hintsFound.length < 5}
+                    className={`flex-1 font-bold py-3 rounded transition ${
+                      hintsFound.length >= 5
+                        ? 'bg-cyan-600 hover:bg-cyan-500 text-white'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    最終パズルに挑戦
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 反射神経ゲームはDOM直接操作で表示（startReflexGame関数） */}
+
+        {/* 操作説明 */}
+        <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 px-4 py-2 rounded text-cyan-300 text-sm">
+          <p>WASD: 移動 | マウスドラッグ: 視点回転 | E: 調べる</p>
+        </div>
+
+        <style jsx>{`
+          @keyframes marquee {
+            0% { transform: translateX(100%); }
+            100% { transform: translateX(-100%); }
+          }
+          .animate-marquee {
+            animation: marquee 15s linear infinite;
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  // 完了画面
+  if (screen === 'complete') {
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center p-4">
+        <div className="bg-gray-800 bg-opacity-90 p-8 rounded-lg shadow-2xl max-w-md w-full border border-cyan-500 text-center">
+          {gameCompleted ? (
+            <>
+              <h1 className="text-4xl font-bold text-green-400 mb-6">🎉 クリア！ 🎉</h1>
+              <p className="text-cyan-300 text-xl mb-4">おめでとうございます！</p>
+              <div className="text-white text-lg mb-6">
+                <p>チーム: {teamName}</p>
+                <p>番号: {teamNumber}</p>
+                <p className="text-2xl font-bold text-cyan-400 mt-4">
+                  クリアタイム: {formatTime(completionTime || 0)}
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              <h1 className="text-4xl font-bold text-red-400 mb-6">時間切れ</h1>
+              <p className="text-cyan-300 text-xl mb-4">お疲れ様でした！</p>
+              <div className="text-white text-lg mb-6">
+                <p>チーム: {teamName}</p>
+                <p>番号: {teamNumber}</p>
+                <p>見つけたヒント: {hintsFound.length} / 5</p>
+              </div>
+            </>
+          )}
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded transition"
+          >
+            もう一度プレイ
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+};
+
+
+    ReactDOM.render(<CyberEscapeGame />, document.getElementById('root'));
+  </script>
+</body>
+</html>
