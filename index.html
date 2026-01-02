@@ -305,22 +305,13 @@ const CyberEscapeGame = () => {
   // 管理画面: 全チームデータを取得
   const fetchAllTeams = async () => {
     try {
-      const result = await window.storage.list('team:', true);
-      if (result && result.keys) {
-        const teams = [];
-        for (const key of result.keys) {
-          try {
-            const teamResult = await window.storage.get(key, true);
-            if (teamResult) {
-              const teamData = JSON.parse(teamResult.value);
-              teams.push(teamData);
-            }
-          } catch (e) {
-            console.error('Error fetching team:', key, e);
-          }
-        }
+      const teams = await supabase.getAllTeams();
+      if (teams && teams.length > 0) {
+        const formattedTeams = teams.map(function(t) {
+          return Object.assign({}, t.data, { name: t.name, number: t.number });
+        });
         // クリアタイム順、未クリアは進捗順にソート
-        teams.sort((a, b) => {
+        formattedTeams.sort(function(a, b) {
           if (a.completed && b.completed) {
             return (a.completionTime || 9999) - (b.completionTime || 9999);
           }
@@ -328,7 +319,7 @@ const CyberEscapeGame = () => {
           if (b.completed) return 1;
           return (b.hintsFound?.length || 0) - (a.hintsFound?.length || 0);
         });
-        setAllTeams(teams);
+        setAllTeams(formattedTeams);
       }
     } catch (error) {
       console.error('Error fetching teams:', error);
@@ -370,10 +361,10 @@ const CyberEscapeGame = () => {
   const resetAllTeams = async () => {
     if (!confirm('全てのチームデータを削除しますか？この操作は取り消せません。')) return;
     try {
-      const result = await window.storage.list('team:', true);
-      if (result && result.keys) {
-        for (const key of result.keys) {
-          await window.storage.delete(key, true);
+      const teams = await supabase.getAllTeams();
+      if (teams && teams.length > 0) {
+        for (var i = 0; i < teams.length; i++) {
+          await supabase.deleteTeam(teams[i].number);
         }
       }
       setAllTeams([]);
@@ -385,10 +376,12 @@ const CyberEscapeGame = () => {
   };
 
   // ロビーデータを取得
-  const fetchLobbyData = () => {
-    const result = storage.get(`team:${teamNumber}`);
-    if (result) {
-      const data = JSON.parse(result.value);
+  const fetchLobbyData = async () => {
+    const team = await supabase.getTeam(teamNumber);
+    if (team) {
+      const data = team.data;
+      data.name = team.name;
+      data.number = team.number;
       setLobbyData(data);
       
       // 全員揃ったらロビー開始時刻をセット
@@ -397,7 +390,7 @@ const CyberEscapeGame = () => {
       
       if (allJoined && !data.lobbyStartTime) {
         data.lobbyStartTime = Date.now();
-        storage.set(`team:${teamNumber}`, JSON.stringify(data));
+        await supabase.updateTeam(teamNumber, data);
       }
       
       // 残り時間を計算（全員揃ってから）
@@ -414,7 +407,7 @@ const CyberEscapeGame = () => {
       
       // ゲームが開始されていたら自分も移行
       if (data.gameStarted) {
-        const myEntry = data.members.find(m => m.oderId === myPlayerId);
+        const myEntry = data.members.find(function(m) { return m.oderId === myPlayerId; });
         if (myEntry && myEntry.roleIndex !== undefined) {
           const availableRoles = getRolesForTeamSize(data.maxMembers || teamSize);
           setRole(availableRoles[myEntry.roleIndex]);
@@ -427,15 +420,15 @@ const CyberEscapeGame = () => {
   };
 
   // 役割を選択
-  const selectRole = (roleIndex) => {
+  const selectRole = async (roleIndex) => {
     if (!lobbyData || selectedRole !== null) return;
     
-    const result = storage.get(`team:${teamNumber}`);
-    if (!result) return;
-    const data = JSON.parse(result.value);
+    const team = await supabase.getTeam(teamNumber);
+    if (!team) return;
+    const data = team.data;
     
     // 既に誰かが選んでいないかチェック
-    const alreadyTaken = data.members.some(m => m.roleIndex === roleIndex);
+    const alreadyTaken = data.members.some(function(m) { return m.roleIndex === roleIndex; });
     if (alreadyTaken) {
       alert('この役割は既に選ばれています');
       fetchLobbyData();
@@ -443,22 +436,22 @@ const CyberEscapeGame = () => {
     }
     
     // 自分のエントリを更新
-    const myEntry = data.members.find(m => m.oderId === myPlayerId);
+    const myEntry = data.members.find(function(m) { return m.oderId === myPlayerId; });
     if (myEntry) {
       myEntry.roleIndex = roleIndex;
       const availableRoles = getRolesForTeamSize(data.maxMembers || teamSize);
       myEntry.roleName = availableRoles[roleIndex].name;
-      storage.set(`team:${teamNumber}`, JSON.stringify(data));
+      await supabase.updateTeam(teamNumber, data);
       setSelectedRole(roleIndex);
       setLobbyData(data);
     }
   };
 
   // 自動割り当てしてゲーム開始
-  const autoAssignAndStart = (data) => {
-    const result = storage.get(`team:${teamNumber}`);
-    if (!result) return;
-    const latestData = JSON.parse(result.value);
+  const autoAssignAndStart = async (oldData) => {
+    const team = await supabase.getTeam(teamNumber);
+    if (!team) return;
+    const latestData = team.data;
     
     if (latestData.gameStarted) return;
     
@@ -466,7 +459,7 @@ const CyberEscapeGame = () => {
     const availableRoles = getRolesForTeamSize(maxMembers);
     
     // 未選択のメンバーに役割を自動割り当て
-    const takenRoles = latestData.members.filter(m => m.roleIndex !== undefined).map(m => m.roleIndex);
+    const takenRoles = latestData.members.filter(function(m) { return m.roleIndex !== undefined; }).map(function(m) { return m.roleIndex; });
     const freeRoles = [];
     
     for (let i = 0; i < availableRoles.length; i++) {
@@ -485,10 +478,10 @@ const CyberEscapeGame = () => {
     
     latestData.gameStarted = true;
     latestData.startTime = Date.now();
-    storage.set(`team:${teamNumber}`, JSON.stringify(latestData));
+    await supabase.updateTeam(teamNumber, latestData);
     
     // 自分の役割を設定してゲーム画面へ
-    const myEntry = latestData.members.find(m => m.oderId === myPlayerId);
+    const myEntry = latestData.members.find(function(m) { return m.oderId === myPlayerId; });
     if (myEntry && myEntry.roleIndex !== undefined) {
       const myRole = availableRoles[myEntry.roleIndex];
       setRole(myRole);
@@ -502,13 +495,13 @@ const CyberEscapeGame = () => {
   };
 
   // ロビーに入る
-  const enterLobby = () => {
-    const result = storage.get(`team:${teamNumber}`);
-    if (!result) {
+  const enterLobby = async () => {
+    const team = await supabase.getTeam(teamNumber);
+    if (!team) {
       alert('チームが見つかりません');
       return;
     }
-    const data = JSON.parse(result.value);
+    const data = team.data;
     
     // 既にゲーム開始済みなら直接ゲームへ（途中参加）
     if (data.gameStarted) {
@@ -523,7 +516,7 @@ const CyberEscapeGame = () => {
     }
     
     // プレイヤーIDを生成
-    const oderId = `P${Date.now()}`;
+    const oderId = 'P' + Date.now();
     setMyPlayerId(oderId);
     
     // メンバーとして追加
@@ -535,26 +528,26 @@ const CyberEscapeGame = () => {
       roleName: undefined
     });
     
-    storage.set(`team:${teamNumber}`, JSON.stringify(data));
+    await supabase.updateTeam(teamNumber, data);
     setLobbyData(data);
     setRoleSelectTimer(45);
     setScreen('lobby');
   };
 
   // テスト用：ダミーメンバー追加
-  const forceFullTeam = () => {
-    const result = storage.get(`team:${teamNumber}`);
-    if (result) {
-      const data = JSON.parse(result.value);
+  const forceFullTeam = async () => {
+    const team = await supabase.getTeam(teamNumber);
+    if (team) {
+      const data = team.data;
       const maxMembers = data.maxMembers || teamSize;
       while (data.members.length < maxMembers) {
         data.members.push({
-          oderId: `DUMMY${Date.now()}${Math.random()}`,
+          oderId: 'DUMMY' + Date.now() + Math.random(),
           joinTime: Date.now(),
           roleIndex: undefined
         });
       }
-      storage.set(`team:${teamNumber}`, JSON.stringify(data));
+      await supabase.updateTeam(teamNumber, data);
       setLobbyData(data);
       fetchLobbyData();
       alert('テスト用にダミーメンバーを追加しました');
@@ -581,17 +574,18 @@ const CyberEscapeGame = () => {
     }
     
     try {
-      const result = await window.storage.get(`team:${teamNumber}`, true);
-      const data = JSON.parse(result.value);
+      const team = await supabase.getTeam(teamNumber);
+      if (!team) return;
+      const data = team.data;
       
-      const myEntry = data.members.find(m => m.oderId === myPlayerId);
+      const myEntry = data.members.find(function(m) { return m.oderId === myPlayerId; });
       if (myEntry) {
         myEntry.ready = true;
-        await window.storage.set(`team:${teamNumber}`, JSON.stringify(data), true);
+        await supabase.updateTeam(teamNumber, data);
       }
       
       // 全員準備完了かチェック
-      const allReady = data.members.every(m => m.ready);
+      const allReady = data.members.every(function(m) { return m.ready; });
       if (allReady && data.members.length >= 2) {
         await autoAssignAndStart(data);
       }
@@ -744,55 +738,95 @@ const CyberEscapeGame = () => {
     }
   };
 
-  // ストレージヘルパー（localStorage使用）
-  const storage = {
-    get: (key) => {
+  // Supabase設定
+  const SUPABASE_URL = 'https://nqvpjmwvrtvbhojeotmx.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_BlwV2-pp5hRrtav0LZmvjg_XbQCLAG9';
+
+  // Supabase APIヘルパー
+  const supabase = {
+    async getTeam(number) {
       try {
-        const val = localStorage.getItem(key);
-        return val ? { key, value: val } : null;
-      } catch (e) { return null; }
+        const res = await fetch(
+          SUPABASE_URL + '/rest/v1/teams?number=eq.' + number + '&select=*',
+          { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY } }
+        );
+        const data = await res.json();
+        return data && data.length > 0 ? data[0] : null;
+      } catch (e) { console.error('getTeam error:', e); return null; }
     },
-    set: (key, value) => {
+    async createTeam(number, name, teamData) {
       try {
-        localStorage.setItem(key, value);
-        return { key, value };
-      } catch (e) { return null; }
+        const res = await fetch(
+          SUPABASE_URL + '/rest/v1/teams',
+          {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=representation'
+            },
+            body: JSON.stringify({ number: number, name: name, data: teamData })
+          }
+        );
+        return await res.json();
+      } catch (e) { console.error('createTeam error:', e); return null; }
     },
-    list: (prefix) => {
+    async updateTeam(number, teamData) {
       try {
-        const keys = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && key.startsWith(prefix)) keys.push(key);
-        }
-        return { keys };
-      } catch (e) { return { keys: [] }; }
+        const res = await fetch(
+          SUPABASE_URL + '/rest/v1/teams?number=eq.' + number,
+          {
+            method: 'PATCH',
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ data: teamData })
+          }
+        );
+        return res.ok;
+      } catch (e) { console.error('updateTeam error:', e); return false; }
     },
-    delete: (key) => {
+    async getAllTeams() {
       try {
-        localStorage.removeItem(key);
-        return { deleted: true };
-      } catch (e) { return null; }
+        const res = await fetch(
+          SUPABASE_URL + '/rest/v1/teams?select=*&order=created_at.desc',
+          { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY } }
+        );
+        return await res.json();
+      } catch (e) { console.error('getAllTeams error:', e); return []; }
+    },
+    async deleteTeam(number) {
+      try {
+        const res = await fetch(
+          SUPABASE_URL + '/rest/v1/teams?number=eq.' + number,
+          {
+            method: 'DELETE',
+            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+          }
+        );
+        return res.ok;
+      } catch (e) { console.error('deleteTeam error:', e); return false; }
     }
   };
 
   // チーム作成
-  const handleCreateTeam = () => {
+  const handleCreateTeam = async () => {
     if (!teamName.trim()) return;
     
     // 4桁のランダムな数字（1000-9999）
     const teamNum = String(1000 + Math.floor(Math.random() * 9000));
     
     // 重複チェック
-    const existing = storage.get(`team:${teamNum}`);
+    const existing = await supabase.getTeam(teamNum);
     if (existing) {
       handleCreateTeam();
       return;
     }
     
     const teamData = {
-      name: teamName,
-      number: teamNum,
       maxMembers: teamSize,
       members: [],
       lobbyStartTime: null,
@@ -805,29 +839,29 @@ const CyberEscapeGame = () => {
       createdAt: Date.now()
     };
     
-    storage.set(`team:${teamNum}`, JSON.stringify(teamData));
+    await supabase.createTeam(teamNum, teamName, teamData);
     
     setTeamNumber(teamNum);
     setScreen('waiting');
   };
 
   // チーム参加
-  const handleJoinTeam = () => {
+  const handleJoinTeam = async () => {
     if (!teamNumber.trim()) return;
     
     // 数字のみに正規化
     const normalizedNumber = teamNumber.replace(/\D/g, '');
-    const result = storage.get(`team:${normalizedNumber}`);
-    if (!result) {
+    const team = await supabase.getTeam(normalizedNumber);
+    if (!team) {
       alert('チームが見つかりません。チーム番号を確認してください。');
       return;
     }
     
-    const teamData = JSON.parse(result.value);
+    const teamData = team.data;
     
     // 人数上限チェック
     if (teamData.members && teamData.members.length >= teamData.maxMembers) {
-      alert(`このチームは満員です（${teamData.maxMembers}人）`);
+      alert('このチームは満員です（' + teamData.maxMembers + '人）');
       return;
     }
     
@@ -837,34 +871,34 @@ const CyberEscapeGame = () => {
       return;
     }
     
-    setTeamName(teamData.name);
+    setTeamName(team.name);
     setTeamNumber(normalizedNumber);
     setTeamSize(teamData.maxMembers || 5);
     setScreen('waiting');
   };
 
   // ゲーム開始（ロビー経由）
-  const handleStartGame = () => {
+  const handleStartGame = async () => {
     if (selectedRole === null) {
       alert('役割を選んでください');
       return;
     }
     
-    const result = storage.get(`team:${teamNumber}`);
-    if (!result) return;
-    const data = JSON.parse(result.value);
+    const team = await supabase.getTeam(teamNumber);
+    if (!team) return;
+    const data = team.data;
     
     const maxMembers = data.maxMembers || teamSize;
     const availableRoles = getRolesForTeamSize(maxMembers);
     
     // 未選択者に自動割り当て
-    const takenRoles = data.members.filter(m => m.roleIndex !== undefined).map(m => m.roleIndex);
+    const takenRoles = data.members.filter(function(m) { return m.roleIndex !== undefined; }).map(function(m) { return m.roleIndex; });
     const freeRoles = [];
-    for (let i = 0; i < availableRoles.length; i++) {
+    for (var i = 0; i < availableRoles.length; i++) {
       if (!takenRoles.includes(i)) freeRoles.push(i);
     }
     
-    data.members.forEach(member => {
+    data.members.forEach(function(member) {
       if (member.roleIndex === undefined && freeRoles.length > 0) {
         member.roleIndex = freeRoles.shift();
         member.roleName = availableRoles[member.roleIndex]?.name;
@@ -874,7 +908,7 @@ const CyberEscapeGame = () => {
     
     data.gameStarted = true;
     data.startTime = Date.now();
-    storage.set(`team:${teamNumber}`, JSON.stringify(data));
+    await supabase.updateTeam(teamNumber, data);
     
     setRole(availableRoles[selectedRole]);
     setAssignedRoles([availableRoles[selectedRole]]);
