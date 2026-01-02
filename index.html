@@ -399,8 +399,8 @@ const CyberEscapeGame = () => {
         const remaining = Math.max(0, 45 - elapsed);
         setRoleSelectTimer(remaining);
         
-        // タイムアップでゲーム開始
-        if (remaining <= 0 && !data.gameStarted && selectedRole !== null) {
+        // タイムアップでゲーム開始（役割未選択でも自動割り当て）
+        if (remaining <= 0 && !data.gameStarted) {
           autoAssignAndStart(data);
         }
       }
@@ -408,12 +408,27 @@ const CyberEscapeGame = () => {
       // ゲームが開始されていたら自分も移行
       if (data.gameStarted) {
         const myEntry = data.members.find(function(m) { return m.oderId === myPlayerId; });
-        if (myEntry && myEntry.roleIndex !== undefined) {
+        if (myEntry) {
           const availableRoles = getRolesForTeamSize(data.maxMembers || teamSize);
-          setRole(availableRoles[myEntry.roleIndex]);
-          setShowMessage(true);
-          setTimerStarted(true);
-          setScreen('game');
+          // 役割が未割り当ての場合は空いている役割を割り当て
+          if (myEntry.roleIndex === undefined) {
+            const takenRoles = data.members.filter(function(m) { return m.roleIndex !== undefined && m.oderId !== myPlayerId; }).map(function(m) { return m.roleIndex; });
+            for (var i = 0; i < availableRoles.length; i++) {
+              if (!takenRoles.includes(i)) {
+                myEntry.roleIndex = i;
+                break;
+              }
+            }
+          }
+          if (myEntry.roleIndex !== undefined) {
+            setRole(availableRoles[myEntry.roleIndex]);
+            setAssignedRoles([availableRoles[myEntry.roleIndex]]);
+            setSelectedRole(myEntry.roleIndex);
+            setTeamSize(data.maxMembers || teamSize);
+            setShowMessage(true);
+            setTimerStarted(true);
+            setScreen('game');
+          }
         }
       }
     }
@@ -920,62 +935,7 @@ const CyberEscapeGame = () => {
   // ヒント取得（ボクセルパズル経由）
   const collectHint = async (hintId) => {
     if (hintsFound.includes(hintId)) {
-      // 既に取得済みの場合はそのまま表示
-      const roleForHint = roles[hintId];
-      const isMyHint = assignedRoles.some(r => r.id === roleForHint.id);
-      
-      if (!isMyHint) {
-        setCurrentHint({
-          title: '???',
-          message: 'このヒントはあなたの役割では見えません。\n他のチームメンバーに確認してもらいましょう。',
-          color: '#666666'
-        });
-      } else {
-        const hints = roleForHint.hints;
-        setCurrentHint({
-          title: roleForHint.name + 'のヒント',
-          message: hints.map(h => `【${h.fragment}】\n${h.clue}`).join('\n\n'),
-          color: roleForHint.color
-        });
-      }
-      setShowHintModal(true);
-      return;
-    }
-    
-    const roleForHint = roles[hintId];
-    const isMyHint = assignedRoles.some(r => r.id === roleForHint.id);
-    
-    if (!isMyHint) {
-      setCurrentHint({
-        title: '???',
-        message: 'このヒントはあなたの役割では見えません。\n他のチームメンバーに確認してもらいましょう。',
-        color: '#666666'
-      });
-      setShowHintModal(true);
-      return;
-    }
-    
-    // 反射神経ゲームを開始（DOM直接操作）
-    const difficulty = getDifficultyFromTeamSize(teamSize);
-    setCurrentVoxelHintId(hintId);
-    setVoxelPuzzleType('hint');
-    startReflexGame(difficulty, 'hint', onVoxelPuzzleComplete, closeReflexGame);
-  };
-
-  // 反射神経ゲームを閉じる
-  const closeReflexGame = useCallback(() => {
-    const existing = document.getElementById('reflex-game-container');
-    if (existing) existing.remove();
-  }, []);
-
-  // ボクセルパズルクリア時の処理
-  const onVoxelPuzzleComplete = () => {
-    if (voxelPuzzleType === 'hint' && currentVoxelHintId !== null) {
-      // ヒント取得を記録
-      const newHintsFound = [...hintsFound, currentVoxelHintId];
-      setHintsFound(newHintsFound);
-      
-      // ヒントの色と名前（クリスタルの色に対応）
+      // 既に取得済みの場合はヒント表示
       const hintInfo = [
         { name: 'リーダー', color: '#ffd700' },
         { name: '解読員', color: '#ff6b6b' },
@@ -983,41 +943,76 @@ const CyberEscapeGame = () => {
         { name: '分析員', color: '#95e1d3' },
         { name: '通信員', color: '#dda0dd' }
       ];
-      
-      const info = hintInfo[currentVoxelHintId] || { name: '不明', color: '#ffffff' };
-      
-      // 役割に応じたフィールドヒントを取得
       const roleIds = ['leader', 'decoder', 'investigator', 'analyst', 'communicator'];
-      const roleId = roleIds[currentVoxelHintId];
-      const fieldHints = getFieldHints(teamSize, roleId) || ['ヒントなし'];
+      const info = hintInfo[hintId] || { name: '不明', color: '#ffffff' };
+      const fieldHints = getFieldHints(teamSize, roleIds[hintId]) || ['ヒントなし'];
+      
+      setCurrentHint({
+        title: info.name + 'のヒント（取得済み）',
+        message: fieldHints.join('\n'),
+        color: info.color
+      });
+      setShowHintModal(true);
+      return;
+    }
+    
+    // 反射神経ゲームを開始（DOM直接操作）
+    const difficulty = getDifficultyFromTeamSize(teamSize);
+    
+    // クリア時のコールバック
+    const onComplete = function() {
+      // ヒント取得を記録
+      const newHintsFound = [...hintsFound, hintId];
+      setHintsFound(newHintsFound);
+      
+      const hintInfo = [
+        { name: 'リーダー', color: '#ffd700' },
+        { name: '解読員', color: '#ff6b6b' },
+        { name: '調査員', color: '#4ecdc4' },
+        { name: '分析員', color: '#95e1d3' },
+        { name: '通信員', color: '#dda0dd' }
+      ];
+      const roleIds = ['leader', 'decoder', 'investigator', 'analyst', 'communicator'];
+      const info = hintInfo[hintId] || { name: '不明', color: '#ffffff' };
+      const fieldHints = getFieldHints(teamSize, roleIds[hintId]) || ['ヒントなし'];
       
       setCurrentHint({
         title: info.name + 'のヒント',
         message: fieldHints.join('\n'),
         color: info.color
       });
-      
       setShowHintModal(true);
-    } else if (voxelPuzzleType === 'final') {
-      // 最終パズルクリア
-      setGameCompleted(true);
-      
-      const finalTime = 1200 - timeLeft;
-      setCompletionTime(finalTime);
-      
-      setScreen('complete');
-    }
+    };
+    
+    const onClose = function() {
+      var existing = document.getElementById('reflex-game-container');
+      if (existing) existing.remove();
+    };
+    
+    startReflexGame(difficulty, 'hint', onComplete, onClose);
   };
 
   // 最終パズルを開始
   const startFinalPuzzle = () => {
     if (hintsFound.length < 5) {
-      setPuzzleError(`まだ全てのヒントを集めていません（${hintsFound.length}/5）`);
+      setPuzzleError('まだ全てのヒントを集めていません（' + hintsFound.length + '/5）');
       return;
     }
     setShowPuzzleModal(false);
-    setVoxelPuzzleType('final');
-    startReflexGame(5, 'final', onVoxelPuzzleComplete, closeReflexGame);
+    
+    const onComplete = function() {
+      setGameCompleted(true);
+      const finalTime = 1200 - timeLeft;
+      setCompletionTime(finalTime);
+      setScreen('complete');
+    };
+    
+    const onClose = function() {
+      var existing = document.getElementById('reflex-game-container');
+      if (existing) existing.remove();
+    };
+    
+    startReflexGame(5, 'final', onComplete, onClose);
   };
 
   // タイマー
@@ -1036,21 +1031,28 @@ const CyberEscapeGame = () => {
     }
   }, [timerStarted, timeLeft, screen]);
 
+  // インタラクション処理（ボタンとキーの両方から呼び出し可能）
+  const handleInteraction = () => {
+    if (nearbyObject) {
+      if (nearbyObject.type === 'hint') {
+        collectHint(nearbyObject.id);
+      } else if (nearbyObject.type === 'puzzle') {
+        setShowPuzzleModal(true);
+      }
+    }
+  };
+
   // キー入力でインタラクション
   useEffect(() => {
-    const handleInteraction = (e) => {
-      if (e.key.toLowerCase() === 'e' && nearbyObject) {
-        if (nearbyObject.type === 'hint') {
-          collectHint(nearbyObject.id);
-        } else if (nearbyObject.type === 'puzzle') {
-          setShowPuzzleModal(true);
-        }
+    const onKeyDown = function(e) {
+      if (e.key.toLowerCase() === 'e') {
+        handleInteraction();
       }
     };
     
-    window.addEventListener('keydown', handleInteraction);
-    return () => window.removeEventListener('keydown', handleInteraction);
-  }, [nearbyObject, hintsFound, assignedRoles]);
+    window.addEventListener('keydown', onKeyDown);
+    return function() { window.removeEventListener('keydown', onKeyDown); };
+  }, [nearbyObject, hintsFound]);
 
   // Three.js シーン
   useEffect(() => {
@@ -1707,20 +1709,22 @@ const CyberEscapeGame = () => {
       // プレイヤー移動
       const speed = 0.15;
       const player = playerRef.current;
+      const keys = keysRef.current;
+      const mobileKeys = window.mobileKeys || {};
 
-      if (keysRef.current['w']) {
+      if (keys['w'] || mobileKeys.w) {
         player.x -= Math.sin(player.rotation) * speed;
         player.z -= Math.cos(player.rotation) * speed;
       }
-      if (keysRef.current['s']) {
+      if (keys['s'] || mobileKeys.s) {
         player.x += Math.sin(player.rotation) * speed;
         player.z += Math.cos(player.rotation) * speed;
       }
-      if (keysRef.current['a']) {
+      if (keys['a'] || mobileKeys.a) {
         player.x -= Math.cos(player.rotation) * speed;
         player.z += Math.sin(player.rotation) * speed;
       }
-      if (keysRef.current['d']) {
+      if (keys['d'] || mobileKeys.d) {
         player.x += Math.cos(player.rotation) * speed;
         player.z -= Math.sin(player.rotation) * speed;
       }
@@ -1871,13 +1875,16 @@ const CyberEscapeGame = () => {
               <>
                 <label className="block text-cyan-300 mb-2">チーム番号（4桁）</label>
                 <input
-                  type="text"
+                  type="number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={teamNumber}
-                  onChange={(e) => setTeamNumber(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                  onKeyPress={(e) => e.key === 'Enter' && handleJoinTeam()}
+                  onChange={function(e) { setTeamNumber(e.target.value.replace(/\D/g, '').slice(0, 4)); }}
+                  onKeyDown={function(e) { if (e.key === 'Enter') handleJoinTeam(); }}
                   className="w-full px-4 py-3 bg-gray-700 text-white text-center text-3xl tracking-widest font-mono rounded border border-cyan-500 focus:outline-none focus:border-cyan-400 mb-4"
                   placeholder="1234"
                   maxLength="4"
+                  autoComplete="off"
                 />
                 <button
                   onClick={handleJoinTeam}
@@ -2533,10 +2540,48 @@ const CyberEscapeGame = () => {
 
         {/* 反射神経ゲームはDOM直接操作で表示（startReflexGame関数） */}
 
-        {/* 操作説明 */}
-        <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 px-4 py-2 rounded text-cyan-300 text-sm">
+        {/* 操作説明（PC向け） */}
+        <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 px-4 py-2 rounded text-cyan-300 text-sm hidden md:block">
           <p>WASD: 移動 | マウスドラッグ: 視点回転 | E: 調べる</p>
         </div>
+
+        {/* スマホ用操作ボタン */}
+        <div className="absolute bottom-4 left-4 md:hidden flex flex-col gap-2">
+          <div className="flex justify-center">
+            <button 
+              onTouchStart={function() { window.mobileKeys = window.mobileKeys || {}; window.mobileKeys.w = true; }}
+              onTouchEnd={function() { window.mobileKeys.w = false; }}
+              className="w-14 h-14 bg-cyan-600 bg-opacity-70 rounded-full text-white text-2xl font-bold active:bg-cyan-400"
+            >↑</button>
+          </div>
+          <div className="flex gap-2">
+            <button 
+              onTouchStart={function() { window.mobileKeys = window.mobileKeys || {}; window.mobileKeys.a = true; }}
+              onTouchEnd={function() { window.mobileKeys.a = false; }}
+              className="w-14 h-14 bg-cyan-600 bg-opacity-70 rounded-full text-white text-2xl font-bold active:bg-cyan-400"
+            >←</button>
+            <button 
+              onTouchStart={function() { window.mobileKeys = window.mobileKeys || {}; window.mobileKeys.s = true; }}
+              onTouchEnd={function() { window.mobileKeys.s = false; }}
+              className="w-14 h-14 bg-cyan-600 bg-opacity-70 rounded-full text-white text-2xl font-bold active:bg-cyan-400"
+            >↓</button>
+            <button 
+              onTouchStart={function() { window.mobileKeys = window.mobileKeys || {}; window.mobileKeys.d = true; }}
+              onTouchEnd={function() { window.mobileKeys.d = false; }}
+              className="w-14 h-14 bg-cyan-600 bg-opacity-70 rounded-full text-white text-2xl font-bold active:bg-cyan-400"
+            >→</button>
+          </div>
+        </div>
+
+        {/* インタラクションボタン（近くにオブジェクトがある時表示） */}
+        {nearbyObject && (
+          <button
+            onClick={handleInteraction}
+            className="absolute bottom-4 right-4 bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-4 px-8 rounded-lg text-xl shadow-lg animate-pulse"
+          >
+            🔍 調べる (E)
+          </button>
+        )}
 
         <style jsx>{`
           @keyframes marquee {
