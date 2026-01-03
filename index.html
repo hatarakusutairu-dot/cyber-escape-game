@@ -33,7 +33,7 @@ const CyberEscapeGame = () => {
   const [role, setRole] = useState(null);
   const [assignedRoles, setAssignedRoles] = useState([]);
   const [showMessage, setShowMessage] = useState(true);
-  const [timeLeft, setTimeLeft] = useState(1200);
+  const [timeLeft, setTimeLeft] = useState(900);
   const [timerStarted, setTimerStarted] = useState(false);
   const [hintsFound, setHintsFound] = useState([]);
   const [puzzlesSolved, setPuzzlesSolved] = useState([]);
@@ -351,10 +351,10 @@ const CyberEscapeGame = () => {
 
   // チームの残り時間を計算
   const getTeamTimeLeft = (team) => {
-    if (!team.startTime) return 1200;
-    if (team.completed) return 1200 - (team.completionTime || 0);
+    if (!team.startTime) return 900;
+    if (team.completed) return 900 - (team.completionTime || 0);
     const elapsed = Math.floor((Date.now() - team.startTime) / 1000);
-    return Math.max(0, 1200 - elapsed);
+    return Math.max(0, 900 - elapsed);
   };
 
   // 全チームリセット
@@ -1018,7 +1018,7 @@ const CyberEscapeGame = () => {
     
     const onComplete = function() {
       setGameCompleted(true);
-      const finalTime = 1200 - timeLeft;
+      const finalTime = 900 - timeLeft;
       setCompletionTime(finalTime);
       setScreen('complete');
     };
@@ -1913,7 +1913,7 @@ const CyberEscapeGame = () => {
           </div>
 
           <div className="mt-6 text-cyan-300 text-sm space-y-1">
-            <p>• 制限時間: 20分</p>
+            <p>• 制限時間: 15分</p>
             <p>• チーム人数: 2〜5名</p>
             <p>• 操作: WASD移動、マウス視点</p>
           </div>
