@@ -932,59 +932,75 @@ const CyberEscapeGame = () => {
     setScreen('game');
   };
 
-  // ヒント取得（ボクセルパズル経由）
+  // ヒント取得（反射神経ゲーム経由）
   const collectHint = async (hintId) => {
+    const hintInfo = [
+      { name: 'リーダー', color: '#ffd700', roleId: 'leader' },
+      { name: '解読員', color: '#ff6b6b', roleId: 'decoder' },
+      { name: '調査員', color: '#4ecdc4', roleId: 'investigator' },
+      { name: '分析員', color: '#95e1d3', roleId: 'analyst' },
+      { name: '通信員', color: '#dda0dd', roleId: 'communicator' }
+    ];
+    const info = hintInfo[hintId] || { name: '不明', color: '#ffffff', roleId: 'unknown' };
+    
+    // 自分の役割かチェック
+    const isMyHint = role && role.id === info.roleId;
+    
     if (hintsFound.includes(hintId)) {
-      // 既に取得済みの場合はヒント表示
-      const hintInfo = [
-        { name: 'リーダー', color: '#ffd700' },
-        { name: '解読員', color: '#ff6b6b' },
-        { name: '調査員', color: '#4ecdc4' },
-        { name: '分析員', color: '#95e1d3' },
-        { name: '通信員', color: '#dda0dd' }
-      ];
-      const roleIds = ['leader', 'decoder', 'investigator', 'analyst', 'communicator'];
-      const info = hintInfo[hintId] || { name: '不明', color: '#ffffff' };
-      const fieldHints = getFieldHints(teamSize, roleIds[hintId]) || ['ヒントなし'];
-      
-      setCurrentHint({
-        title: info.name + 'のヒント（取得済み）',
-        message: fieldHints.join('\n'),
-        color: info.color
-      });
+      // 既に取得済みの場合
+      if (isMyHint) {
+        // 自分の役割のヒントは見れる
+        const fieldHints = getFieldHints(teamSize, info.roleId) || ['ヒントなし'];
+        setCurrentHint({
+          title: info.name + 'のヒント（取得済み）',
+          message: fieldHints.join('\n'),
+          color: info.color
+        });
+      } else {
+        // 他の役割のヒントは見れない
+        setCurrentHint({
+          title: info.name + 'のヒント',
+          message: '🔒 このヒントは「' + info.name + '」の役割の人だけが見れます。\n\nチームメンバーに内容を確認してもらいましょう！',
+          color: '#666666'
+        });
+      }
       setShowHintModal(true);
       return;
     }
     
-    // 反射神経ゲームを開始（DOM直接操作）
+    // 反射神経ゲームを開始（誰でもクリア可能）
     const difficulty = getDifficultyFromTeamSize(teamSize);
     
     // クリア時のコールバック
     const onComplete = function() {
-      // ヒント取得を記録
-      const newHintsFound = [...hintsFound, hintId];
-      setHintsFound(newHintsFound);
-      
-      const hintInfo = [
-        { name: 'リーダー', color: '#ffd700' },
-        { name: '解読員', color: '#ff6b6b' },
-        { name: '調査員', color: '#4ecdc4' },
-        { name: '分析員', color: '#95e1d3' },
-        { name: '通信員', color: '#dda0dd' }
-      ];
-      const roleIds = ['leader', 'decoder', 'investigator', 'analyst', 'communicator'];
-      const info = hintInfo[hintId] || { name: '不明', color: '#ffffff' };
-      const fieldHints = getFieldHints(teamSize, roleIds[hintId]) || ['ヒントなし'];
-      
-      setCurrentHint({
-        title: info.name + 'のヒント',
-        message: fieldHints.join('\n'),
-        color: info.color
+      // ヒント取得を記録（関数型更新で最新の状態を使用）
+      setHintsFound(function(prev) {
+        var newHints = prev.slice();
+        if (!newHints.includes(hintId)) {
+          newHints.push(hintId);
+        }
+        return newHints;
       });
+      
+      // ヒント表示
+      if (isMyHint) {
+        var fieldHints = getFieldHints(teamSize, info.roleId) || ['ヒントなし'];
+        setCurrentHint({
+          title: info.name + 'のヒント',
+          message: fieldHints.join('\n'),
+          color: info.color
+        });
+      } else {
+        setCurrentHint({
+          title: info.name + 'のヒント',
+          message: '✅ ヒントを解除しました！\n\n🔒 ただし、このヒントは「' + info.name + '」の役割の人だけが見れます。\n\nチームメンバーに内容を確認してもらいましょう！',
+          color: '#666666'
+        });
+      }
       setShowHintModal(true);
     };
     
-    const onClose = function() {
+    var onClose = function() {
       var existing = document.getElementById('reflex-game-container');
       if (existing) existing.remove();
     };
@@ -2488,19 +2504,30 @@ const CyberEscapeGame = () => {
                     全てのヒントを集めてから最終パズルに挑戦してください
                   </p>
                   <div className="flex justify-center gap-2 mb-4">
-                    {[0, 1, 2, 3, 4].map(idx => (
-                      <div
-                        key={idx}
-                        className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${
-                          hintsFound.includes(idx) 
-                            ? 'border-green-400 bg-green-400 bg-opacity-20' 
-                            : 'border-gray-600 bg-gray-700'
-                        }`}
-                        style={{ borderColor: hintsFound.includes(idx) ? roles[idx].color : undefined }}
-                      >
-                        {hintsFound.includes(idx) ? '✓' : '?'}
-                      </div>
-                    ))}
+                    {[
+                      { name: 'リーダー', color: '#ffd700' },
+                      { name: '解読員', color: '#ff6b6b' },
+                      { name: '調査員', color: '#4ecdc4' },
+                      { name: '分析員', color: '#95e1d3' },
+                      { name: '通信員', color: '#dda0dd' }
+                    ].map(function(info, idx) {
+                      return (
+                        <div
+                          key={idx}
+                          className={'w-10 h-10 rounded-full flex items-center justify-center border-2 ' + (
+                            hintsFound.includes(idx) 
+                              ? 'bg-green-400 bg-opacity-20' 
+                              : 'border-gray-600 bg-gray-700'
+                          )}
+                          style={{ borderColor: hintsFound.includes(idx) ? info.color : '#4b5563' }}
+                          title={info.name}
+                        >
+                          <span style={{ color: hintsFound.includes(idx) ? info.color : '#9ca3af' }}>
+                            {hintsFound.includes(idx) ? '✓' : '?'}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                   <p className="text-cyan-400 text-center text-lg font-bold">
                     収集済み: {hintsFound.length} / 5
