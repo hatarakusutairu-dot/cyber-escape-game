@@ -932,6 +932,36 @@ const CyberEscapeGame = () => {
     setScreen('game');
   };
 
+  // 人数別：誰がどのヒントを見れるか
+  const getHintPermissions = (size, roleId) => {
+    // hintId: 0=リーダー, 1=解読員, 2=調査員, 3=分析員, 4=通信員 のモニュメント
+    const permissions = {
+      2: {
+        leader: [0, 1, 2],    // リーダーは3つ見れる
+        decoder: [3, 4],       // 解読員は2つ見れる
+      },
+      3: {
+        leader: [0, 1],        // リーダーは2つ
+        decoder: [2, 3],       // 解読員は2つ
+        investigator: [4],     // 調査員は1つ
+      },
+      4: {
+        leader: [0],
+        decoder: [1, 2],       // 解読員は2つ
+        investigator: [3],
+        analyst: [4],
+      },
+      5: {
+        leader: [0],
+        decoder: [1],
+        investigator: [2],
+        analyst: [3],
+        communicator: [4],
+      },
+    };
+    return permissions[size]?.[roleId] || [];
+  };
+
   // ヒント取得（反射神経ゲーム経由）
   const collectHint = async (hintId) => {
     const hintInfo = [
@@ -943,24 +973,87 @@ const CyberEscapeGame = () => {
     ];
     const info = hintInfo[hintId] || { name: '不明', color: '#ffffff', roleId: 'unknown' };
     
-    // 自分の役割かチェック
-    const isMyHint = role && role.id === info.roleId;
+    // 自分がこのヒントを見れるかチェック（人数ベース）
+    const myPermissions = role ? getHintPermissions(teamSize, role.id) : [];
+    const canSeeHint = myPermissions.includes(hintId);
+    
+    // ヒントの内容を取得（人数とモニュメントIDに応じた内容）
+    const getHintContent = function(hId) {
+      // 人数別のヒント内容（各モニュメント専用）
+      var contents = {
+        2: {
+          // リーダーが見れる3つ
+          0: ['▲は1番目'],
+          1: ['★は3番目'],
+          2: ['●は■より後ろ'],
+          // 解読員が見れる2つ
+          3: ['数列：3, 4, 5, ?, ?', '■は2番目'],
+          4: ['◆は最後', '?は0と4'],
+        },
+        3: {
+          // リーダーが見れる2つ
+          0: ['1番目は3角の形'],
+          1: ['4角の形は2つある'],
+          // 解読員が見れる2つ
+          2: ['数列：3, 4, 5, 0, 4'],
+          3: ['この数列が順番を決める'],
+          // 調査員が見れる1つ
+          4: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'],
+        },
+        4: {
+          // リーダー1つ
+          0: ['答えは5つの形の列'],
+          // 解読員2つ
+          1: ['角の数で順番が決まる'],
+          2: ['3番目は5角'],
+          // 調査員1つ
+          3: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'],
+          // 分析員1つ
+          4: ['数列完成：3,4,5,0,4', '4番目は0'],
+        },
+        5: {
+          0: ['全員の情報を統合せよ'],
+          1: ['角の数が順番の法則'],
+          2: ['青=▲ 緑=■', '黄=★ 赤=● 紫=◆'],
+          3: ['数列：3,4,5,0,4'],
+          4: ['4角の形は2つある', '■が先、◆が後'],
+        },
+      };
+      return contents[teamSize]?.[hId] || ['ヒントなし'];
+    };
+    
+    // 誰が見れるヒントか表示用
+    const getWhoCanSee = function(hId) {
+      var whoList = [];
+      var perms = {
+        2: { leader: [0,1,2], decoder: [3,4] },
+        3: { leader: [0,1], decoder: [2,3], investigator: [4] },
+        4: { leader: [0], decoder: [1,2], investigator: [3], analyst: [4] },
+        5: { leader: [0], decoder: [1], investigator: [2], analyst: [3], communicator: [4] },
+      };
+      var names = { leader: 'リーダー', decoder: '解読員', investigator: '調査員', analyst: '分析員', communicator: '通信員' };
+      var sizePerms = perms[teamSize] || {};
+      for (var r in sizePerms) {
+        if (sizePerms[r].includes(hId)) {
+          whoList.push(names[r]);
+        }
+      }
+      return whoList.join('、') || '不明';
+    };
     
     if (hintsFound.includes(hintId)) {
       // 既に取得済みの場合
-      if (isMyHint) {
-        // 自分の役割のヒントは見れる
-        const fieldHints = getFieldHints(teamSize, info.roleId) || ['ヒントなし'];
+      if (canSeeHint) {
+        var fieldHints = getHintContent(hintId);
         setCurrentHint({
-          title: info.name + 'のヒント（取得済み）',
+          title: 'ヒント #' + (hintId + 1) + '（取得済み）',
           message: fieldHints.join('\n'),
           color: info.color
         });
       } else {
-        // 他の役割のヒントは見れない
         setCurrentHint({
-          title: info.name + 'のヒント',
-          message: '🔒 このヒントは「' + info.name + '」の役割の人だけが見れます。\n\nチームメンバーに内容を確認してもらいましょう！',
+          title: 'ヒント #' + (hintId + 1) + '（取得済み）',
+          message: '🔒 このヒントは「' + getWhoCanSee(hintId) + '」が見れます。\n\nチームメンバーに内容を確認してもらいましょう！',
           color: '#666666'
         });
       }
@@ -969,11 +1062,14 @@ const CyberEscapeGame = () => {
     }
     
     // 反射神経ゲームを開始（誰でもクリア可能）
-    const difficulty = getDifficultyFromTeamSize(teamSize);
+    var difficulty = getDifficultyFromTeamSize(teamSize);
+    var canSee = canSeeHint;
+    var hContent = getHintContent(hintId);
+    var whoSees = getWhoCanSee(hintId);
     
     // クリア時のコールバック
-    const onComplete = function() {
-      // ヒント取得を記録（関数型更新で最新の状態を使用）
+    var onComplete = function() {
+      // ヒント取得を記録
       setHintsFound(function(prev) {
         var newHints = prev.slice();
         if (!newHints.includes(hintId)) {
@@ -983,17 +1079,16 @@ const CyberEscapeGame = () => {
       });
       
       // ヒント表示
-      if (isMyHint) {
-        var fieldHints = getFieldHints(teamSize, info.roleId) || ['ヒントなし'];
+      if (canSee) {
         setCurrentHint({
-          title: info.name + 'のヒント',
-          message: fieldHints.join('\n'),
+          title: 'ヒント #' + (hintId + 1),
+          message: hContent.join('\n'),
           color: info.color
         });
       } else {
         setCurrentHint({
-          title: info.name + 'のヒント',
-          message: '✅ ヒントを解除しました！\n\n🔒 ただし、このヒントは「' + info.name + '」の役割の人だけが見れます。\n\nチームメンバーに内容を確認してもらいましょう！',
+          title: 'ヒント #' + (hintId + 1),
+          message: '✅ ヒントを解除しました！\n\n🔒 このヒントは「' + whoSees + '」が見れます。\n\nチームメンバーに内容を確認してもらいましょう！',
           color: '#666666'
         });
       }
