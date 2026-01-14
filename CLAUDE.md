@@ -56,6 +56,18 @@ entry → waiting → lobby → game → complete
 - `getDifficultyFromTeamSize(size)` - 難易度計算
 - `getTeamTimeLeft(team)` - 残り時間計算
 - `startFinalPuzzle()` - 最終パズル開始
+- `createMinecraftAvatar(roleColor)` - マイクラ風アバター生成
+- `createRoleLabel(roleName, color)` - 頭上ラベル生成
+- `updateMyPosition()` - 自分の位置をサーバーに送信
+- `fetchOtherPlayers()` - 他プレイヤーの位置を取得
+
+### Multiplayer Avatar System
+- 他プレイヤーをマイクラ風ボクセルアバターで表示
+- 役割ごとに色分け（リーダー=金、解読員=赤、調査員=青緑、分析員=緑、通信員=紫）
+- 頭上に役割名ラベル表示
+- 歩行アニメーション付き
+- 位置送信: 500ms間隔、位置受信: 1000ms間隔
+- 線形補間で滑らかな移動
 
 ### Supabase Table: `teams`
 ```sql

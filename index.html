@@ -90,6 +90,10 @@ const CyberEscapeGame = () => {
   const hintObjectsRef = useRef([]);
   const consoleRef = useRef(null);
 
+  // マルチプレイヤーアバター用
+  const otherPlayersRef = useRef({});    // 他プレイヤーの位置データ { oderId: { current, target, roleIndex, roleName } }
+  const avatarMeshesRef = useRef({});    // アバターメッシュ管理 { oderId: THREE.Group }
+
   // ボクセルパズルコンポーネント
   // 反射神経ゲームをDOM直接操作で実装（Reactの再レンダリングから完全に独立）
   const reflexGameContainerRef = useRef(null);
@@ -769,6 +773,112 @@ const CyberEscapeGame = () => {
     }
   };
 
+  // マイクラ風アバター作成関数
+  const createMinecraftAvatar = (roleColor) => {
+    const avatarGroup = new THREE.Group();
+
+    const skinColor = 0xffdbac;
+    const bodyColor = new THREE.Color(roleColor);
+    const pantsColor = 0x3a3a5a;
+
+    // 頭部
+    const headGeometry = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+    const headMaterial = new THREE.MeshStandardMaterial({
+      color: skinColor, roughness: 0.8, metalness: 0.1
+    });
+    const head = new THREE.Mesh(headGeometry, headMaterial);
+    head.position.y = 1.5;
+    head.castShadow = true;
+    avatarGroup.add(head);
+
+    // 胴体
+    const bodyGeometry = new THREE.BoxGeometry(0.4, 0.6, 0.2);
+    const bodyMaterial = new THREE.MeshStandardMaterial({
+      color: bodyColor, roughness: 0.7, metalness: 0.2,
+      emissive: bodyColor, emissiveIntensity: 0.15
+    });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.position.y = 1.0;
+    body.castShadow = true;
+    avatarGroup.add(body);
+
+    // 腕
+    const armGeometry = new THREE.BoxGeometry(0.15, 0.5, 0.15);
+    const armMaterial = new THREE.MeshStandardMaterial({
+      color: skinColor, roughness: 0.8, metalness: 0.1
+    });
+    const leftArm = new THREE.Mesh(armGeometry, armMaterial);
+    leftArm.position.set(-0.275, 1.0, 0);
+    leftArm.castShadow = true;
+    avatarGroup.add(leftArm);
+
+    const rightArm = new THREE.Mesh(armGeometry, armMaterial);
+    rightArm.position.set(0.275, 1.0, 0);
+    rightArm.castShadow = true;
+    avatarGroup.add(rightArm);
+
+    // 脚
+    const legGeometry = new THREE.BoxGeometry(0.18, 0.5, 0.18);
+    const legMaterial = new THREE.MeshStandardMaterial({
+      color: pantsColor, roughness: 0.9, metalness: 0.05
+    });
+    const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
+    leftLeg.position.set(-0.1, 0.4, 0);
+    leftLeg.castShadow = true;
+    avatarGroup.add(leftLeg);
+
+    const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
+    rightLeg.position.set(0.1, 0.4, 0);
+    rightLeg.castShadow = true;
+    avatarGroup.add(rightLeg);
+
+    avatarGroup.userData = {
+      isAvatar: true, head, body, leftArm, rightArm, leftLeg, rightLeg
+    };
+
+    return avatarGroup;
+  };
+
+  // 役割名ラベル作成関数
+  const createRoleLabel = (roleName, color) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+
+    // 背景
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.beginPath();
+    ctx.roundRect(0, 0, 256, 64, 8);
+    ctx.fill();
+
+    // 枠線
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(0, 0, 256, 64, 8);
+    ctx.stroke();
+
+    // テキスト
+    ctx.font = 'bold 28px "Hiragino Sans", "Meiryo", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = color;
+    ctx.fillText(roleName, 128, 32);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+
+    const spriteMaterial = new THREE.SpriteMaterial({
+      map: texture, transparent: true, depthTest: false
+    });
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.position.y = 2.0;
+    sprite.scale.set(1.2, 0.3, 1);
+
+    return sprite;
+  };
+
   // Supabase設定
   const SUPABASE_URL = 'https://nqvpjmwvrtvbhojeotmx.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5xdnBqbXd2cnR2YmhvamVvdG14Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNTAxMTksImV4cCI6MjA4MjkyNjExOX0.NbacfvbI6MpuCv1ckTRWQroFrZWugKy9tYwHslaUm70';
@@ -947,6 +1057,62 @@ const CyberEscapeGame = () => {
     setShowMessage(true);
     setTimerStarted(true);
     setScreen('game');
+  };
+
+  // 自分の位置をサーバーに送信
+  const updateMyPosition = async () => {
+    if (!teamNumber || !myPlayerId) return;
+    try {
+      const team = await supabase.getTeam(teamNumber);
+      if (!team) return;
+      const data = team.data;
+      const myEntry = data.members.find(m => m.oderId === myPlayerId);
+      if (myEntry) {
+        const player = playerRef.current;
+        myEntry.position = {
+          x: Math.round(player.x * 100) / 100,
+          z: Math.round(player.z * 100) / 100,
+          rotation: Math.round(player.rotation * 100) / 100,
+          lastUpdate: Date.now()
+        };
+        await supabase.updateTeam(teamNumber, data);
+      }
+    } catch (e) { console.error('updateMyPosition error:', e); }
+  };
+
+  // 他プレイヤーの位置を取得
+  const fetchOtherPlayers = async () => {
+    if (!teamNumber || !myPlayerId) return;
+    try {
+      const team = await supabase.getTeam(teamNumber);
+      if (!team) return;
+      const data = team.data;
+
+      data.members.forEach(member => {
+        if (member.oderId === myPlayerId) return;
+        if (!member.position) return;
+
+        const existing = otherPlayersRef.current[member.oderId];
+        if (existing) {
+          existing.target = { ...member.position };
+        } else {
+          otherPlayersRef.current[member.oderId] = {
+            current: { ...member.position },
+            target: { ...member.position },
+            roleIndex: member.roleIndex,
+            roleName: member.roleName
+          };
+        }
+      });
+
+      // 切断したプレイヤーを削除
+      const activeIds = data.members.map(m => m.oderId);
+      Object.keys(otherPlayersRef.current).forEach(id => {
+        if (!activeIds.includes(id)) {
+          delete otherPlayersRef.current[id];
+        }
+      });
+    } catch (e) { console.error('fetchOtherPlayers error:', e); }
   };
 
   // 人数別：誰がどのヒントを見れるか
@@ -1898,6 +2064,73 @@ const CyberEscapeGame = () => {
       camera.rotation.y = player.rotation;
       camera.rotation.x = player.rotationX;
 
+      // 他プレイヤーのアバター更新
+      const lerpFactor = 0.15;
+      const roleColors = {
+        0: '#ffd700', 1: '#ff6b6b', 2: '#4ecdc4', 3: '#95e1d3', 4: '#dda0dd'
+      };
+
+      Object.entries(otherPlayersRef.current).forEach(([oderId, playerData]) => {
+        // 補間処理
+        playerData.current.x += (playerData.target.x - playerData.current.x) * lerpFactor;
+        playerData.current.z += (playerData.target.z - playerData.current.z) * lerpFactor;
+        let rotDiff = playerData.target.rotation - playerData.current.rotation;
+        while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+        while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+        playerData.current.rotation += rotDiff * lerpFactor;
+
+        let avatar = avatarMeshesRef.current[oderId];
+
+        // アバターがなければ作成
+        if (!avatar) {
+          const color = roleColors[playerData.roleIndex] || '#ffffff';
+          avatar = createMinecraftAvatar(color);
+          avatar.userData.oderId = oderId;
+          avatar.userData.roleName = playerData.roleName;
+          scene.add(avatar);
+          avatarMeshesRef.current[oderId] = avatar;
+
+          // 役割名ラベルを追加
+          if (playerData.roleName) {
+            const label = createRoleLabel(playerData.roleName, color);
+            avatar.add(label);
+            avatar.userData.label = label;
+          }
+        }
+
+        // 位置・向き更新
+        avatar.position.x = playerData.current.x;
+        avatar.position.z = playerData.current.z;
+        avatar.rotation.y = playerData.current.rotation + Math.PI;
+
+        // 歩行アニメーション
+        const isMoving =
+          Math.abs(playerData.target.x - playerData.current.x) > 0.01 ||
+          Math.abs(playerData.target.z - playerData.current.z) > 0.01;
+
+        if (isMoving) {
+          const walkCycle = time * 8;
+          avatar.userData.leftArm.rotation.x = Math.sin(walkCycle) * 0.5;
+          avatar.userData.rightArm.rotation.x = -Math.sin(walkCycle) * 0.5;
+          avatar.userData.leftLeg.rotation.x = -Math.sin(walkCycle) * 0.4;
+          avatar.userData.rightLeg.rotation.x = Math.sin(walkCycle) * 0.4;
+        } else {
+          avatar.userData.leftArm.rotation.x = 0;
+          avatar.userData.rightArm.rotation.x = 0;
+          avatar.userData.leftLeg.rotation.x = 0;
+          avatar.userData.rightLeg.rotation.x = 0;
+        }
+      });
+
+      // 切断したプレイヤーのアバター削除
+      Object.keys(avatarMeshesRef.current).forEach(oderId => {
+        if (!otherPlayersRef.current[oderId]) {
+          const avatar = avatarMeshesRef.current[oderId];
+          scene.remove(avatar);
+          delete avatarMeshesRef.current[oderId];
+        }
+      });
+
       renderer.render(scene, camera);
     };
 
@@ -1935,6 +2168,20 @@ const CyberEscapeGame = () => {
       return () => clearInterval(interval);
     }
   }, [screen, teamNumber, myPlayerId, selectedRole]);
+
+  // ゲーム中の位置送信（500ms間隔）
+  useEffect(() => {
+    if (screen !== 'game' || !myPlayerId) return;
+    const interval = setInterval(updateMyPosition, 500);
+    return () => clearInterval(interval);
+  }, [screen, myPlayerId, teamNumber]);
+
+  // ゲーム中の他プレイヤー位置受信（1000ms間隔）
+  useEffect(() => {
+    if (screen !== 'game' || !myPlayerId) return;
+    const interval = setInterval(fetchOtherPlayers, 1000);
+    return () => clearInterval(interval);
+  }, [screen, myPlayerId, teamNumber]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
