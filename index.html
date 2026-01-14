@@ -16,7 +16,7 @@
       100% { transform: translateX(-200%); }
     }
     .animate-marquee {
-      animation: marquee 12s linear infinite;
+      animation: marquee 30s linear infinite;
     }
   </style>
 </head>
@@ -444,6 +444,8 @@ const CyberEscapeGame = () => {
             const currentTeamSize = data.maxMembers || teamSize;
             setTeamSize(currentTeamSize);
             setTimeLeft(getTeamSettings(currentTeamSize).timeLimit);
+            // チームのヒントを読み込み
+            if (data.hintsFound) setHintsFound(data.hintsFound);
             setShowMessage(true);
             setTimerStarted(true);
             setScreen('game');
@@ -525,6 +527,8 @@ const CyberEscapeGame = () => {
     
     setTeamSize(maxMembers);
     setTimeLeft(getTeamSettings(maxMembers).timeLimit);
+    // チームのヒントを読み込み
+    if (latestData.hintsFound) setHintsFound(latestData.hintsFound);
     setTimerStarted(true);
     setScreen('game');
   };
@@ -1054,9 +1058,21 @@ const CyberEscapeGame = () => {
     setRole(availableRoles[selectedRole]);
     setAssignedRoles([availableRoles[selectedRole]]);
     setTimeLeft(getTeamSettings(teamSize).timeLimit);
+    // チームのヒントを読み込み
+    if (data.hintsFound) setHintsFound(data.hintsFound);
     setShowMessage(true);
     setTimerStarted(true);
     setScreen('game');
+  };
+
+  // ゲーム開始時にチームのhintsFoundを読み込む
+  const loadTeamHints = async () => {
+    try {
+      const team = await supabase.getTeam(teamNumber);
+      if (team && team.data && team.data.hintsFound) {
+        setHintsFound(team.data.hintsFound);
+      }
+    } catch (e) { console.error('loadTeamHints error:', e); }
   };
 
   // 自分の位置をサーバーに送信
@@ -1353,6 +1369,11 @@ const CyberEscapeGame = () => {
       if (nearbyObject.type === 'hint') {
         collectHint(nearbyObject.id);
       } else if (nearbyObject.type === 'puzzle') {
+        // 中央コンソールはリーダーのみ操作可能
+        if (role?.id !== 'leader') {
+          alert('中央コンソールはリーダーのみ操作できます。\nリーダーに操作を依頼してください。');
+          return;
+        }
         setShowPuzzleModal(true);
       }
     }
@@ -3029,7 +3050,7 @@ const CyberEscapeGame = () => {
             100% { transform: translateX(-100%); }
           }
           .animate-marquee {
-            animation: marquee 15s linear infinite;
+            animation: marquee 30s linear infinite;
           }
         `}</style>
       </div>
