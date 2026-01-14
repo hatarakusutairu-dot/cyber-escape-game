@@ -25,6 +25,18 @@
   <script type="text/babel">
     const { useState, useEffect, useRef, useCallback } = React;
 
+    // チームサイズ別設定（e-スポーツコース高校生向け調整）
+    const TEAM_SETTINGS = {
+      2: { timeLimit: 720, hintsRequired: 3, difficulty: 4 },  // 12分、3ヒント
+      3: { timeLimit: 780, hintsRequired: 4, difficulty: 4 },  // 13分、4ヒント
+      4: { timeLimit: 840, hintsRequired: 4, difficulty: 4 },  // 14分、4ヒント
+      5: { timeLimit: 900, hintsRequired: 5, difficulty: 4 },  // 15分、5ヒント
+    };
+
+    const getTeamSettings = (size) => {
+      return TEAM_SETTINGS[size] || TEAM_SETTINGS[5];
+    };
+
 const CyberEscapeGame = () => {
   const [screen, setScreen] = useState('entry');
   const [teamName, setTeamName] = useState('');
@@ -297,9 +309,9 @@ const CyberEscapeGame = () => {
     return shapes[Math.min(difficulty, 5)] || shapes[1];
   };
 
-  // チーム人数から難易度を計算
+  // チーム人数から難易度を計算（全チーム難易度4に統一）
   const getDifficultyFromTeamSize = (size) => {
-    return Math.min(size, 5);
+    return getTeamSettings(size).difficulty;
   };
 
   // 管理画面: 全チームデータを取得
@@ -349,12 +361,13 @@ const CyberEscapeGame = () => {
     setAdminPassword('');
   };
 
-  // チームの残り時間を計算
+  // チームの残り時間を計算（チームサイズに応じた制限時間）
   const getTeamTimeLeft = (team) => {
-    if (!team.startTime) return 900;
-    if (team.completed) return 900 - (team.completionTime || 0);
+    const teamTimeLimit = getTeamSettings(team.maxMembers || 5).timeLimit;
+    if (!team.startTime) return teamTimeLimit;
+    if (team.completed) return teamTimeLimit - (team.completionTime || 0);
     const elapsed = Math.floor((Date.now() - team.startTime) / 1000);
-    return Math.max(0, 900 - elapsed);
+    return Math.max(0, teamTimeLimit - elapsed);
   };
 
   // 全チームリセット
@@ -424,7 +437,9 @@ const CyberEscapeGame = () => {
             setRole(availableRoles[myEntry.roleIndex]);
             setAssignedRoles([availableRoles[myEntry.roleIndex]]);
             setSelectedRole(myEntry.roleIndex);
-            setTeamSize(data.maxMembers || teamSize);
+            const currentTeamSize = data.maxMembers || teamSize;
+            setTeamSize(currentTeamSize);
+            setTimeLeft(getTeamSettings(currentTeamSize).timeLimit);
             setShowMessage(true);
             setTimerStarted(true);
             setScreen('game');
@@ -505,6 +520,7 @@ const CyberEscapeGame = () => {
     }
     
     setTeamSize(maxMembers);
+    setTimeLeft(getTeamSettings(maxMembers).timeLimit);
     setTimerStarted(true);
     setScreen('game');
   };
@@ -927,6 +943,7 @@ const CyberEscapeGame = () => {
     
     setRole(availableRoles[selectedRole]);
     setAssignedRoles([availableRoles[selectedRole]]);
+    setTimeLeft(getTeamSettings(teamSize).timeLimit);
     setShowMessage(true);
     setTimerStarted(true);
     setScreen('game');
@@ -1105,15 +1122,16 @@ const CyberEscapeGame = () => {
 
   // 最終パズルを開始
   const startFinalPuzzle = () => {
-    if (hintsFound.length < 5) {
-      setPuzzleError('まだ全てのヒントを集めていません（' + hintsFound.length + '/5）');
+    const requiredHints = getTeamSettings(teamSize).hintsRequired;
+    if (hintsFound.length < requiredHints) {
+      setPuzzleError('まだ全てのヒントを集めていません（' + hintsFound.length + '/' + requiredHints + '）');
       return;
     }
     setShowPuzzleModal(false);
     
     const onComplete = function() {
       setGameCompleted(true);
-      const finalTime = 900 - timeLeft;
+      const finalTime = getTeamSettings(teamSize).timeLimit - timeLeft;
       setCompletionTime(finalTime);
       setScreen('complete');
     };
@@ -2203,12 +2221,12 @@ const CyberEscapeGame = () => {
                     <div className="mt-3">
                       <div className="flex justify-between text-xs text-gray-400 mb-1">
                         <span>ヒント進捗</span>
-                        <span>{team.hintsFound?.length || 0} / 5</span>
+                        <span>{team.hintsFound?.length || 0} / {getTeamSettings(team.maxMembers || 5).hintsRequired}</span>
                       </div>
                       <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-gradient-to-r from-cyan-500 to-green-500 transition-all duration-500"
-                          style={{ width: `${((team.hintsFound?.length || 0) / 5) * 100}%` }}
+                          style={{ width: `${((team.hintsFound?.length || 0) / getTeamSettings(team.maxMembers || 5).hintsRequired) * 100}%` }}
                         />
                       </div>
                       
@@ -2481,7 +2499,7 @@ const CyberEscapeGame = () => {
 
         {/* ヒント進捗 */}
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-70 px-4 py-2 rounded border border-cyan-500">
-          <div className="text-cyan-300 text-sm">ヒント: {hintsFound.length} / 5</div>
+          <div className="text-cyan-300 text-sm">ヒント: {hintsFound.length} / {getTeamSettings(teamSize).hintsRequired}</div>
         </div>
 
         {/* インタラクションUI */}
@@ -2625,7 +2643,7 @@ const CyberEscapeGame = () => {
                     })}
                   </div>
                   <p className="text-cyan-400 text-center text-lg font-bold">
-                    収集済み: {hintsFound.length} / 5
+                    収集済み: {hintsFound.length} / {getTeamSettings(teamSize).hintsRequired}
                   </p>
                 </div>
 
@@ -2645,9 +2663,9 @@ const CyberEscapeGame = () => {
                   </button>
                   <button
                     onClick={startFinalPuzzle}
-                    disabled={hintsFound.length < 5}
+                    disabled={hintsFound.length < getTeamSettings(teamSize).hintsRequired}
                     className={`flex-1 font-bold py-3 rounded transition ${
-                      hintsFound.length >= 5
+                      hintsFound.length >= getTeamSettings(teamSize).hintsRequired
                         ? 'bg-cyan-600 hover:bg-cyan-500 text-white'
                         : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                     }`}
@@ -2742,7 +2760,7 @@ const CyberEscapeGame = () => {
               <div className="text-white text-lg mb-6">
                 <p>チーム: {teamName}</p>
                 <p>番号: {teamNumber}</p>
-                <p>見つけたヒント: {hintsFound.length} / 5</p>
+                <p>見つけたヒント: {hintsFound.length} / {getTeamSettings(teamSize).hintsRequired}</p>
               </div>
             </>
           )}
