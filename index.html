@@ -1080,13 +1080,21 @@ const CyberEscapeGame = () => {
     } catch (e) { console.error('updateMyPosition error:', e); }
   };
 
-  // 他プレイヤーの位置を取得
+  // 他プレイヤーの位置とヒント情報を取得
   const fetchOtherPlayers = async () => {
     if (!teamNumber || !myPlayerId) return;
     try {
       const team = await supabase.getTeam(teamNumber);
       if (!team) return;
       const data = team.data;
+
+      // チームのhintsFoundを同期
+      if (data.hintsFound && data.hintsFound.length > 0) {
+        setHintsFound(prev => {
+          const merged = [...new Set([...prev, ...data.hintsFound])];
+          return merged.length !== prev.length ? merged : prev;
+        });
+      }
 
       data.members.forEach(member => {
         if (member.oderId === myPlayerId) return;
@@ -1251,8 +1259,8 @@ const CyberEscapeGame = () => {
     var whoSees = getWhoCanSee(hintId);
     
     // クリア時のコールバック
-    var onComplete = function() {
-      // ヒント取得を記録
+    var onComplete = async function() {
+      // ヒント取得を記録（ローカル）
       setHintsFound(function(prev) {
         var newHints = prev.slice();
         if (!newHints.includes(hintId)) {
@@ -1260,7 +1268,20 @@ const CyberEscapeGame = () => {
         }
         return newHints;
       });
-      
+
+      // Supabaseにも保存（チーム共有）
+      try {
+        const team = await supabase.getTeam(teamNumber);
+        if (team) {
+          const data = team.data;
+          if (!data.hintsFound) data.hintsFound = [];
+          if (!data.hintsFound.includes(hintId)) {
+            data.hintsFound.push(hintId);
+            await supabase.updateTeam(teamNumber, data);
+          }
+        }
+      } catch (e) { console.error('saveHintToSupabase error:', e); }
+
       // ヒント表示
       if (canSee) {
         setCurrentHint({
@@ -2861,30 +2882,62 @@ const CyberEscapeGame = () => {
                 
                 <div className="bg-gray-800 p-4 rounded mb-4">
                   <p className="text-gray-300 text-center mb-2">
-                    全てのヒントを集めてから最終パズルに挑戦してください
+                    {role?.id === 'leader'
+                      ? '👑 リーダーはチームが解除した全てのヒントを確認できます'
+                      : '全てのヒントを集めてから最終パズルに挑戦してください'}
                   </p>
-                  <div className="flex justify-center gap-2 mb-4">
+                  <div className="grid grid-cols-1 gap-2 mb-4">
                     {[
-                      { name: 'リーダー', color: '#ffd700' },
-                      { name: '解読員', color: '#ff6b6b' },
-                      { name: '調査員', color: '#4ecdc4' },
-                      { name: '分析員', color: '#95e1d3' },
-                      { name: '通信員', color: '#dda0dd' }
+                      { name: 'リーダー', color: '#ffd700', id: 'leader' },
+                      { name: '解読員', color: '#ff6b6b', id: 'decoder' },
+                      { name: '調査員', color: '#4ecdc4', id: 'investigator' },
+                      { name: '分析員', color: '#95e1d3', id: 'analyst' },
+                      { name: '通信員', color: '#dda0dd', id: 'communicator' }
                     ].map(function(info, idx) {
+                      const isFound = hintsFound.includes(idx);
+                      const myPerms = role ? getHintPermissions(teamSize, role.id) : [];
+                      const canView = role?.id === 'leader' || myPerms.includes(idx);
+                      const hintContent = (() => {
+                        const contents = {
+                          2: { 0: ['▲は1番目'], 1: ['★は3番目'], 2: ['●は■より後ろ'], 3: ['数列：3, 4, 5, ?, ?', '■は2番目'], 4: ['◆は最後', '?は0と4'] },
+                          3: { 0: ['1番目は3角の形'], 1: ['4角の形は2つある'], 2: ['数列：3, 4, 5, 0, 4'], 3: ['この数列が順番を決める'], 4: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'] },
+                          4: { 0: ['答えは5つの形の列'], 1: ['角の数で順番が決まる'], 2: ['3番目は5角'], 3: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'], 4: ['数列完成：3,4,5,0,4', '4番目は0'] },
+                          5: { 0: ['全員の情報を統合せよ'], 1: ['角の数が順番の法則'], 2: ['青=▲ 緑=■', '黄=★ 赤=● 紫=◆'], 3: ['数列：3,4,5,0,4'], 4: ['4角の形は2つある', '■が先、◆が後'] },
+                        };
+                        return contents[teamSize]?.[idx] || ['ヒントなし'];
+                      })();
+
                       return (
                         <div
                           key={idx}
-                          className={'w-10 h-10 rounded-full flex items-center justify-center border-2 ' + (
-                            hintsFound.includes(idx) 
-                              ? 'bg-green-400 bg-opacity-20' 
-                              : 'border-gray-600 bg-gray-700'
+                          className={'p-3 rounded border-2 transition-all ' + (
+                            isFound ? 'bg-gray-700' : 'bg-gray-800 opacity-50'
                           )}
-                          style={{ borderColor: hintsFound.includes(idx) ? info.color : '#4b5563' }}
-                          title={info.name}
+                          style={{ borderColor: isFound ? info.color : '#4b5563' }}
                         >
-                          <span style={{ color: hintsFound.includes(idx) ? info.color : '#9ca3af' }}>
-                            {hintsFound.includes(idx) ? '✓' : '?'}
-                          </span>
+                          <div className="flex items-center gap-2 mb-1">
+                            <div
+                              className="w-6 h-6 rounded-full flex items-center justify-center text-xs"
+                              style={{ backgroundColor: info.color + '33', color: info.color }}
+                            >
+                              {isFound ? '✓' : '?'}
+                            </div>
+                            <span style={{ color: info.color }} className="font-bold text-sm">{info.name}</span>
+                            {!isFound && <span className="text-gray-500 text-xs ml-auto">未取得</span>}
+                          </div>
+                          {isFound && (
+                            <div className="text-sm mt-2 pl-8">
+                              {canView ? (
+                                <div className="text-white">
+                                  {hintContent.map((line, i) => (
+                                    <p key={i} className="text-cyan-300">{line}</p>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-gray-400 italic">🔒 {info.name}のみ閲覧可</p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
