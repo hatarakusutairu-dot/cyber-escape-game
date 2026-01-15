@@ -452,8 +452,12 @@ const CyberEscapeGame = () => {
             const currentTeamSize = data.maxMembers || teamSize;
             setTeamSize(currentTeamSize);
             setTimeLeft(getTeamSettings(currentTeamSize).timeLimit);
-            // チームのヒントを読み込み
-            if (data.hintsFound) setHintsFound(data.hintsFound);
+            // チームのヒントを読み込み（数値型に統一）
+            if (data.hintsFound) {
+              const hints = data.hintsFound.map(Number);
+              setHintsFound(hints);
+              hintsFoundRef.current = hints;
+            }
             setShowMessage(true);
             setTimerStarted(true);
             setScreen('game');
@@ -535,8 +539,12 @@ const CyberEscapeGame = () => {
     
     setTeamSize(maxMembers);
     setTimeLeft(getTeamSettings(maxMembers).timeLimit);
-    // チームのヒントを読み込み
-    if (latestData.hintsFound) setHintsFound(latestData.hintsFound);
+    // チームのヒントを読み込み（数値型に統一）
+    if (latestData.hintsFound) {
+      const hints = latestData.hintsFound.map(Number);
+      setHintsFound(hints);
+      hintsFoundRef.current = hints;
+    }
     setTimerStarted(true);
     setScreen('game');
   };
@@ -1124,8 +1132,12 @@ const CyberEscapeGame = () => {
     setRole(availableRoles[selectedRole]);
     setAssignedRoles([availableRoles[selectedRole]]);
     setTimeLeft(getTeamSettings(teamSize).timeLimit);
-    // チームのヒントを読み込み
-    if (data.hintsFound) setHintsFound(data.hintsFound);
+    // チームのヒントを読み込み（数値型に統一）
+    if (data.hintsFound) {
+      const hints = data.hintsFound.map(Number);
+      setHintsFound(hints);
+      hintsFoundRef.current = hints;
+    }
     setShowMessage(true);
     setTimerStarted(true);
     setScreen('game');
@@ -1136,7 +1148,9 @@ const CyberEscapeGame = () => {
     try {
       const team = await supabase.getTeam(teamNumber);
       if (team && team.data && team.data.hintsFound) {
-        setHintsFound(team.data.hintsFound);
+        const hints = team.data.hintsFound.map(Number);
+        setHintsFound(hints);
+        hintsFoundRef.current = hints;
       }
     } catch (e) { console.error('loadTeamHints error:', e); }
   };
@@ -1170,12 +1184,15 @@ const CyberEscapeGame = () => {
       if (!team) return;
       const data = team.data;
 
-      // チームのhintsFoundを同期
+      // チームのhintsFoundを同期（数値型に統一）
       if (data.hintsFound && data.hintsFound.length > 0) {
+        const supabaseHints = data.hintsFound.map(Number);
         setHintsFound(prev => {
-          const merged = [...new Set([...prev, ...data.hintsFound])];
-          return merged.length !== prev.length ? merged : prev;
+          const prevNums = prev.map(Number);
+          const merged = [...new Set([...prevNums, ...supabaseHints])];
+          return merged.length !== prevNums.length ? merged : prev;
         });
+        hintsFoundRef.current = [...new Set([...(hintsFoundRef.current || []).map(Number), ...supabaseHints])];
       }
 
       data.members.forEach(member => {
