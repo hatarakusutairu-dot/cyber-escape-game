@@ -535,9 +535,11 @@ const CyberEscapeGame = () => {
 
   // ロビーに入る
   const enterLobby = async () => {
+    console.log('enterLobby: チーム番号を検索中...', teamNumber);
     const team = await supabase.getTeam(teamNumber);
+    console.log('enterLobby: 検索結果:', team);
     if (!team) {
-      alert('チームが見つかりません');
+      alert('チームが見つかりません（番号: ' + teamNumber + '）');
       return;
     }
     const data = team.data;
@@ -889,18 +891,22 @@ const CyberEscapeGame = () => {
 
   // Supabase APIヘルパー
   const supabase = {
-    async getTeam(number) {
+    async getTeam(code) {
       try {
+        console.log('getTeam: 検索コード:', code);
         const res = await fetch(
-          SUPABASE_URL + '/rest/v1/teams?number=eq.' + number + '&select=*',
+          SUPABASE_URL + '/rest/v1/teams?code=eq.' + code + '&select=*',
           { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY } }
         );
+        console.log('getTeam: HTTPステータス:', res.status);
         const data = await res.json();
+        console.log('getTeam: レスポンス:', data);
         return data && data.length > 0 ? data[0] : null;
       } catch (e) { console.error('getTeam error:', e); return null; }
     },
-    async createTeam(number, name, teamData) {
+    async createTeam(code, name, teamData) {
       try {
+        console.log('createTeam: 作成開始:', { code, name, teamData });
         const res = await fetch(
           SUPABASE_URL + '/rest/v1/teams',
           {
@@ -911,16 +917,23 @@ const CyberEscapeGame = () => {
               'Content-Type': 'application/json',
               'Prefer': 'return=representation'
             },
-            body: JSON.stringify({ number: number, name: name, data: teamData })
+            body: JSON.stringify({ code: code, name: name, size: teamData.maxMembers, data: teamData })
           }
         );
-        return await res.json();
+        console.log('createTeam: HTTPステータス:', res.status);
+        const result = await res.json();
+        console.log('createTeam: レスポンス:', result);
+        // HTTPエラーの場合はエラーオブジェクトを返す
+        if (!res.ok) {
+          return { error: true, status: res.status, ...result };
+        }
+        return result;
       } catch (e) { console.error('createTeam error:', e); return null; }
     },
-    async updateTeam(number, teamData) {
+    async updateTeam(code, teamData) {
       try {
         const res = await fetch(
-          SUPABASE_URL + '/rest/v1/teams?number=eq.' + number,
+          SUPABASE_URL + '/rest/v1/teams?code=eq.' + code,
           {
             method: 'PATCH',
             headers: {
@@ -943,10 +956,10 @@ const CyberEscapeGame = () => {
         return await res.json();
       } catch (e) { console.error('getAllTeams error:', e); return []; }
     },
-    async deleteTeam(number) {
+    async deleteTeam(code) {
       try {
         const res = await fetch(
-          SUPABASE_URL + '/rest/v1/teams?number=eq.' + number,
+          SUPABASE_URL + '/rest/v1/teams?code=eq.' + code,
           {
             method: 'DELETE',
             headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
@@ -984,8 +997,19 @@ const CyberEscapeGame = () => {
       createdAt: Date.now()
     };
     
-    await supabase.createTeam(teamNum, teamName, teamData);
-    
+    const result = await supabase.createTeam(teamNum, teamName, teamData);
+
+    // チーム作成が失敗した場合（Supabaseはエラー時にmessage/codeプロパティを返す）
+    if (!result || result.error || result.message || result.code || (Array.isArray(result) && result.length === 0)) {
+      console.error('チーム作成エラー:', result);
+      const errorMsg = result?.message || 'チームの作成に失敗しました';
+      alert(errorMsg + '\nもう一度お試しください。');
+      return;
+    }
+
+    // 作成成功を確認
+    console.log('チーム作成成功:', teamNum, result);
+
     setTeamNumber(teamNum);
     setScreen('waiting');
   };
