@@ -323,9 +323,10 @@ const CyberEscapeGame = () => {
   const fetchAllTeams = async () => {
     try {
       const teams = await supabase.getAllTeams();
+      console.log('fetchAllTeams: 取得結果', teams);
       if (teams && teams.length > 0) {
         const formattedTeams = teams.map(function(t) {
-          return Object.assign({}, t.data, { name: t.name, number: t.number });
+          return Object.assign({}, t.data || {}, { name: t.name, number: t.code, code: t.code });
         });
         // クリアタイム順、未クリアは進捗順にソート
         formattedTeams.sort(function(a, b) {
@@ -337,9 +338,12 @@ const CyberEscapeGame = () => {
           return (b.hintsFound?.length || 0) - (a.hintsFound?.length || 0);
         });
         setAllTeams(formattedTeams);
+      } else {
+        setAllTeams([]);
       }
     } catch (error) {
       console.error('Error fetching teams:', error);
+      setAllTeams([]);
     }
   };
 
@@ -380,9 +384,11 @@ const CyberEscapeGame = () => {
     if (!confirm('全てのチームデータを削除しますか？この操作は取り消せません。')) return;
     try {
       const teams = await supabase.getAllTeams();
+      console.log('resetAllTeams: 取得したチーム', teams);
       if (teams && teams.length > 0) {
         for (var i = 0; i < teams.length; i++) {
-          await supabase.deleteTeam(teams[i].number);
+          console.log('resetAllTeams: 削除中', teams[i].code);
+          await supabase.deleteTeam(teams[i].code);
         }
       }
       setAllTeams([]);
