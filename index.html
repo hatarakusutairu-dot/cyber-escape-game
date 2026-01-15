@@ -48,6 +48,7 @@ const CyberEscapeGame = () => {
   const [timeLeft, setTimeLeft] = useState(900);
   const [timerStarted, setTimerStarted] = useState(false);
   const [hintsFound, setHintsFound] = useState([]);
+  const hintsFoundRef = useRef([]);  // 最新の値を常に参照できるようにRef
   const [puzzlesSolved, setPuzzlesSolved] = useState([]);
   const [nearbyObject, setNearbyObject] = useState(null);
   const [showHintModal, setShowHintModal] = useState(false);
@@ -1224,26 +1225,21 @@ const CyberEscapeGame = () => {
     const myPermissions = role ? getHintPermissions(teamSize, role.id) : [];
     const canSeeHint = myPermissions.includes(hintId);
 
-    // Supabaseから最新のhintsFoundを取得（他プレイヤーのクリア状況を反映）
-    let teamHintsFound = [...hintsFound];  // コピーを作成
+    // ローカル状態（Ref経由で最新値）とSupabaseの両方をチェック
+    const localHints = hintsFoundRef.current || [];
+    let teamHintsFound = [...localHints];
     try {
-      console.log('collectHint: Supabaseから最新データを取得中...', { hintId, teamNumber });
       const team = await supabase.getTeam(teamNumber);
-      console.log('collectHint: チームデータ:', team);
-      if (team && team.data) {
-        console.log('collectHint: team.data:', team.data);
-        console.log('collectHint: team.data.hintsFound:', team.data.hintsFound);
-        if (team.data.hintsFound && Array.isArray(team.data.hintsFound)) {
-          teamHintsFound = team.data.hintsFound;
-          // ローカル状態も更新
-          setHintsFound(prev => {
-            const merged = [...new Set([...prev, ...teamHintsFound])];
-            return merged;
-          });
-        }
+      if (team && team.data && team.data.hintsFound && Array.isArray(team.data.hintsFound)) {
+        // ローカルとSupabaseをマージ
+        teamHintsFound = [...new Set([...localHints, ...team.data.hintsFound])];
+        // ローカル状態も更新
+        setHintsFound(teamHintsFound);
+        hintsFoundRef.current = teamHintsFound;
       }
     } catch (e) { console.error('fetchTeamHints error:', e); }
-    console.log('collectHint: teamHintsFound =', teamHintsFound, 'hintId =', hintId, 'includes =', teamHintsFound.includes(hintId));
+
+    console.log('collectHint: check', { localHints, teamHintsFound, hintId, includes: teamHintsFound.includes(hintId) });
     
     // ヒントの内容を取得（人数とモニュメントIDに応じた内容）
     const getHintContent = function(hId) {
@@ -1338,14 +1334,13 @@ const CyberEscapeGame = () => {
     
     // クリア時のコールバック
     var onComplete = async function() {
-      // ヒント取得を記録（ローカル）
-      setHintsFound(function(prev) {
-        var newHints = prev.slice();
-        if (!newHints.includes(hintId)) {
-          newHints.push(hintId);
-        }
-        return newHints;
-      });
+      // ヒント取得を記録（ローカル状態とRef両方更新）
+      var newHints = hintsFoundRef.current.slice();
+      if (!newHints.includes(hintId)) {
+        newHints.push(hintId);
+      }
+      hintsFoundRef.current = newHints;  // Refを即座に更新
+      setHintsFound(newHints);  // 状態も更新
 
       // Supabaseにも保存（チーム共有）
       try {
@@ -1414,6 +1409,11 @@ const CyberEscapeGame = () => {
     
     startReflexGame(5, 'final', onComplete, onClose);
   };
+
+  // hintsFoundRefを常に最新に保つ
+  useEffect(() => {
+    hintsFoundRef.current = hintsFound;
+  }, [hintsFound]);
 
   // タイマー
   useEffect(() => {
