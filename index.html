@@ -2678,9 +2678,9 @@ const CyberEscapeGame = () => {
                         />
                       </div>
                       
-                      {/* ヒント詳細 */}
+                      {/* ヒント詳細（チーム人数に応じた数を表示） */}
                       <div className="flex gap-2 mt-2">
-                        {[0, 1, 2, 3, 4].map(idx => (
+                        {Array.from({ length: getTeamSettings(team.maxMembers || 5).hintsRequired }, (_, idx) => (
                           <div
                             key={idx}
                             className={`w-8 h-8 rounded flex items-center justify-center text-xs ${
@@ -2688,7 +2688,7 @@ const CyberEscapeGame = () => {
                                 ? 'bg-green-500 bg-opacity-30 text-green-400 border border-green-500'
                                 : 'bg-gray-700 text-gray-500 border border-gray-600'
                             }`}
-                            title={roles[idx]?.name}
+                            title={`ヒント${idx + 1}`}
                           >
                             {team.hintsFound?.includes(idx) ? '✓' : idx + 1}
                           </div>
@@ -3067,21 +3067,46 @@ const CyberEscapeGame = () => {
                       : '全てのヒントを集めてから最終パズルに挑戦してください'}
                   </p>
                   <div className="grid grid-cols-1 gap-2 mb-4">
-                    {[
-                      { name: 'リーダー', color: '#ffd700', id: 'leader' },
-                      { name: '解読員', color: '#ff6b6b', id: 'decoder' },
-                      { name: '調査員', color: '#4ecdc4', id: 'investigator' },
-                      { name: '分析員', color: '#95e1d3', id: 'analyst' },
-                      { name: '通信員', color: '#dda0dd', id: 'communicator' }
-                    ].map(function(info, idx) {
+                    {(() => {
+                      // チーム人数に応じたヒント情報を生成
+                      const requiredHints = getTeamSettings(teamSize).hintsRequired;
+                      const hintInfoBySize = {
+                        2: [
+                          { name: 'ヒント1', color: '#ffd700' },
+                          { name: 'ヒント2', color: '#ff6b6b' },
+                          { name: 'ヒント3', color: '#4ecdc4' },
+                        ],
+                        3: [
+                          { name: 'リーダー', color: '#ffd700' },
+                          { name: '解読員', color: '#ff6b6b' },
+                          { name: '調査員', color: '#4ecdc4' },
+                          { name: '分析員', color: '#95e1d3' },
+                        ],
+                        4: [
+                          { name: 'リーダー', color: '#ffd700' },
+                          { name: '解読員', color: '#ff6b6b' },
+                          { name: '調査員', color: '#4ecdc4' },
+                          { name: '分析員', color: '#95e1d3' },
+                        ],
+                        5: [
+                          { name: 'リーダー', color: '#ffd700' },
+                          { name: '解読員', color: '#ff6b6b' },
+                          { name: '調査員', color: '#4ecdc4' },
+                          { name: '分析員', color: '#95e1d3' },
+                          { name: '通信員', color: '#dda0dd' },
+                        ],
+                      };
+                      const hintInfo = hintInfoBySize[teamSize] || hintInfoBySize[5];
+                      return hintInfo.slice(0, requiredHints);
+                    })().map(function(info, idx) {
                       const isFound = hintsFound.includes(idx);
                       const myPerms = role ? getHintPermissions(teamSize, role.id) : [];
                       const canView = role?.id === 'leader' || myPerms.includes(idx);
                       const hintContent = (() => {
                         const contents = {
-                          2: { 0: ['▲は1番目'], 1: ['★は3番目'], 2: ['●は■より後ろ'], 3: ['数列：3, 4, 5, ?, ?', '■は2番目'], 4: ['◆は最後', '?は0と4'] },
-                          3: { 0: ['1番目は3角の形'], 1: ['4角の形は2つある'], 2: ['数列：3, 4, 5, 0, 4'], 3: ['この数列が順番を決める'], 4: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'] },
-                          4: { 0: ['答えは5つの形の列'], 1: ['角の数で順番が決まる'], 2: ['3番目は5角'], 3: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'], 4: ['数列完成：3,4,5,0,4', '4番目は0'] },
+                          2: { 0: ['▲は1番目'], 1: ['★は3番目'], 2: ['●は■より後ろ'] },
+                          3: { 0: ['1番目は3角の形'], 1: ['4角の形は2つある'], 2: ['数列：3, 4, 5, 0, 4'], 3: ['この数列が順番を決める'] },
+                          4: { 0: ['答えは5つの形の列'], 1: ['角の数で順番が決まる'], 2: ['3番目は5角'], 3: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'] },
                           5: { 0: ['全員の情報を統合せよ'], 1: ['角の数が順番の法則'], 2: ['青=▲ 緑=■', '黄=★ 赤=● 紫=◆'], 3: ['数列：3,4,5,0,4'], 4: ['4角の形は2つある', '■が先、◆が後'] },
                         };
                         return contents[teamSize]?.[idx] || ['ヒントなし'];
