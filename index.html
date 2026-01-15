@@ -1225,18 +1225,25 @@ const CyberEscapeGame = () => {
     const canSeeHint = myPermissions.includes(hintId);
 
     // Supabaseから最新のhintsFoundを取得（他プレイヤーのクリア状況を反映）
-    let teamHintsFound = hintsFound;
+    let teamHintsFound = [...hintsFound];  // コピーを作成
     try {
+      console.log('collectHint: Supabaseから最新データを取得中...', { hintId, teamNumber });
       const team = await supabase.getTeam(teamNumber);
-      if (team && team.data && team.data.hintsFound) {
-        teamHintsFound = team.data.hintsFound;
-        // ローカル状態も更新
-        setHintsFound(prev => {
-          const merged = [...new Set([...prev, ...teamHintsFound])];
-          return merged;
-        });
+      console.log('collectHint: チームデータ:', team);
+      if (team && team.data) {
+        console.log('collectHint: team.data:', team.data);
+        console.log('collectHint: team.data.hintsFound:', team.data.hintsFound);
+        if (team.data.hintsFound && Array.isArray(team.data.hintsFound)) {
+          teamHintsFound = team.data.hintsFound;
+          // ローカル状態も更新
+          setHintsFound(prev => {
+            const merged = [...new Set([...prev, ...teamHintsFound])];
+            return merged;
+          });
+        }
       }
     } catch (e) { console.error('fetchTeamHints error:', e); }
+    console.log('collectHint: teamHintsFound =', teamHintsFound, 'hintId =', hintId, 'includes =', teamHintsFound.includes(hintId));
     
     // ヒントの内容を取得（人数とモニュメントIDに応じた内容）
     const getHintContent = function(hId) {
@@ -1342,13 +1349,19 @@ const CyberEscapeGame = () => {
 
       // Supabaseにも保存（チーム共有）
       try {
+        console.log('onComplete: ヒント保存開始', { hintId, teamNumber });
         const team = await supabase.getTeam(teamNumber);
+        console.log('onComplete: 現在のチームデータ', team);
         if (team) {
-          const data = team.data;
+          const data = team.data || {};
           if (!data.hintsFound) data.hintsFound = [];
           if (!data.hintsFound.includes(hintId)) {
             data.hintsFound.push(hintId);
-            await supabase.updateTeam(teamNumber, data);
+            console.log('onComplete: 保存するhintsFound', data.hintsFound);
+            const updateResult = await supabase.updateTeam(teamNumber, data);
+            console.log('onComplete: 保存結果', updateResult);
+          } else {
+            console.log('onComplete: 既に保存済み', data.hintsFound);
           }
         }
       } catch (e) { console.error('saveHintToSupabase error:', e); }
