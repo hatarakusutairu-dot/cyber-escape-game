@@ -54,6 +54,7 @@ const CyberEscapeGame = () => {
   const [showHintModal, setShowHintModal] = useState(false);
   const [currentHint, setCurrentHint] = useState(null);
   const [showPuzzleModal, setShowPuzzleModal] = useState(false);
+  const [showFinalInputModal, setShowFinalInputModal] = useState(false);  // 最終パズル入力画面
   const [puzzleInput, setPuzzleInput] = useState(['', '', '', '', '']);
   const [puzzleError, setPuzzleError] = useState('');
   const [teamSize, setTeamSize] = useState(5);
@@ -1410,7 +1411,7 @@ const CyberEscapeGame = () => {
     startReflexGame(difficulty, 'hint', onComplete, onClose);
   };
 
-  // 最終パズルを開始
+  // 最終パズルを開始（反射ゲーム後にパズル入力画面を表示）
   const startFinalPuzzle = () => {
     const requiredHints = getTeamSettings(teamSize).hintsRequired;
     if (hintsFound.length < requiredHints) {
@@ -1418,20 +1419,58 @@ const CyberEscapeGame = () => {
       return;
     }
     setShowPuzzleModal(false);
-    
+
     const onComplete = function() {
-      setGameCompleted(true);
-      const finalTime = getTeamSettings(teamSize).timeLimit - timeLeft;
-      setCompletionTime(finalTime);
-      setScreen('complete');
+      // 反射ゲームクリア後、パズル入力画面を表示
+      setPuzzleInput(['', '', '', '', '']);
+      setPuzzleError('');
+      setShowFinalInputModal(true);
     };
-    
+
     const onClose = function() {
       var existing = document.getElementById('reflex-game-container');
       if (existing) existing.remove();
     };
-    
+
     startReflexGame(5, 'final', onComplete, onClose);
+  };
+
+  // パズル回答をチェック
+  const checkPuzzleAnswer = async () => {
+    // 正解: ▲ ■ ★ ● ◆（三角、四角、星、丸、ひし形）
+    const correctAnswers = ['▲', '■', '★', '●', '◆'];
+    const userAnswers = puzzleInput.map(s => s.trim());
+
+    // 全て入力されているかチェック
+    if (userAnswers.some(a => a === '')) {
+      setPuzzleError('全ての欄に形を入力してください');
+      return;
+    }
+
+    // 正解チェック
+    const isCorrect = userAnswers.every((ans, idx) => ans === correctAnswers[idx]);
+
+    if (isCorrect) {
+      setShowFinalInputModal(false);
+      setGameCompleted(true);
+      const finalTime = getTeamSettings(teamSize).timeLimit - timeLeft;
+      setCompletionTime(finalTime);
+
+      // Supabaseに完了を記録
+      try {
+        const team = await supabase.getTeam(teamNumber);
+        if (team) {
+          const data = team.data || {};
+          data.completed = true;
+          data.completionTime = finalTime;
+          await supabase.updateTeam(teamNumber, data);
+        }
+      } catch (e) { console.error('saveCompletion error:', e); }
+
+      setScreen('complete');
+    } else {
+      setPuzzleError('不正解です。ヒントを確認して再度入力してください。');
+    }
   };
 
   // hintsFoundRefを常に最新に保つ
@@ -3084,6 +3123,73 @@ const CyberEscapeGame = () => {
                     }`}
                   >
                     最終パズルに挑戦
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 最終パズル入力画面 */}
+        {showFinalInputModal && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-90 z-50">
+            <div className="max-w-lg w-full mx-4">
+              <div className="bg-gray-900 border-2 border-green-500 rounded-lg p-6 shadow-2xl">
+                <h2 className="text-2xl font-bold mb-4 text-center text-green-400">
+                  🔓 最終認証 - 形を入力
+                </h2>
+
+                <p className="text-gray-300 text-center mb-4">
+                  チームで集めたヒントを元に、正しい順番で形を入力してください。
+                </p>
+
+                <div className="bg-gray-800 p-4 rounded mb-4">
+                  <p className="text-gray-400 text-sm mb-2 text-center">使用できる形: ▲ ■ ★ ● ◆</p>
+                  <div className="flex justify-center gap-2">
+                    {puzzleInput.map((val, idx) => (
+                      <input
+                        key={idx}
+                        type="text"
+                        value={val}
+                        onChange={(e) => {
+                          const newInput = [...puzzleInput];
+                          newInput[idx] = e.target.value;
+                          setPuzzleInput(newInput);
+                        }}
+                        className="w-12 h-12 text-center text-2xl bg-gray-700 border-2 border-cyan-500 rounded text-white focus:border-green-400 focus:outline-none"
+                        maxLength={1}
+                        placeholder={(idx + 1).toString()}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-gray-800 p-3 rounded mb-4">
+                  <p className="text-xs text-gray-400 text-center">
+                    ヒント: 各形を対応する記号で入力<br/>
+                    三角=▲ 四角=■ 星=★ 丸=● ひし形=◆
+                  </p>
+                </div>
+
+                {puzzleError && (
+                  <p className="text-red-400 text-center mb-4">{puzzleError}</p>
+                )}
+
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => {
+                      setShowFinalInputModal(false);
+                      setPuzzleError('');
+                    }}
+                    className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded transition"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    onClick={checkPuzzleAnswer}
+                    className="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded transition"
+                  >
+                    認証する
                   </button>
                 </div>
               </div>
