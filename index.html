@@ -968,17 +968,34 @@ const CyberEscapeGame = () => {
         );
         return res.ok;
       } catch (e) { console.error('deleteTeam error:', e); return false; }
+    },
+    async getTeamByName(name) {
+      try {
+        const res = await fetch(
+          SUPABASE_URL + '/rest/v1/teams?name=eq.' + encodeURIComponent(name) + '&select=*',
+          { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY } }
+        );
+        const data = await res.json();
+        return data && data.length > 0 ? data[0] : null;
+      } catch (e) { console.error('getTeamByName error:', e); return null; }
     }
   };
 
   // チーム作成
   const handleCreateTeam = async () => {
     if (!teamName.trim()) return;
-    
+
+    // チーム名の重複チェック
+    const existingByName = await supabase.getTeamByName(teamName.trim());
+    if (existingByName) {
+      alert('このチーム名は既に使用されています。\n別の名前を入力してください。');
+      return;
+    }
+
     // 4桁のランダムな数字（1000-9999）
     const teamNum = String(1000 + Math.floor(Math.random() * 9000));
-    
-    // 重複チェック
+
+    // チーム番号の重複チェック
     const existing = await supabase.getTeam(teamNum);
     if (existing) {
       handleCreateTeam();
