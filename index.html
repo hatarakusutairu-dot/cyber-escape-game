@@ -1023,8 +1023,9 @@ const CyberEscapeGame = () => {
     
     const result = await supabase.createTeam(teamNum, teamName, teamData);
 
-    // チーム作成が失敗した場合（Supabaseはエラー時にmessage/codeプロパティを返す）
-    if (!result || result.error || result.message || result.code || (Array.isArray(result) && result.length === 0)) {
+    // チーム作成が失敗した場合
+    // 注意: result.codeはチームコードなのでエラーチェックに含めない
+    if (!result || result.error || result.message || (Array.isArray(result) && result.length === 0)) {
       console.error('チーム作成エラー:', result);
       const errorMsg = result?.message || 'チームの作成に失敗しました';
       alert(errorMsg + '\nもう一度お試しください。');
