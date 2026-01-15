@@ -1250,21 +1250,26 @@ const CyberEscapeGame = () => {
     const myPermissions = role ? getHintPermissions(teamSize, role.id) : [];
     const canSeeHint = myPermissions.includes(hintId);
 
+    // hintIdを数値に統一
+    const numHintId = Number(hintId);
+
     // ローカル状態（Ref経由で最新値）とSupabaseの両方をチェック
-    const localHints = hintsFoundRef.current || [];
+    const localHints = (hintsFoundRef.current || []).map(Number);
     let teamHintsFound = [...localHints];
     try {
       const team = await supabase.getTeam(teamNumber);
+      console.log('collectHint: Supabaseデータ', { teamData: team?.data, hintsFound: team?.data?.hintsFound });
       if (team && team.data && team.data.hintsFound && Array.isArray(team.data.hintsFound)) {
-        // ローカルとSupabaseをマージ
-        teamHintsFound = [...new Set([...localHints, ...team.data.hintsFound])];
+        // 数値に統一してマージ
+        const supabaseHints = team.data.hintsFound.map(Number);
+        teamHintsFound = [...new Set([...localHints, ...supabaseHints])];
         // ローカル状態も更新
         setHintsFound(teamHintsFound);
         hintsFoundRef.current = teamHintsFound;
       }
     } catch (e) { console.error('fetchTeamHints error:', e); }
 
-    console.log('collectHint: check', { localHints, teamHintsFound, hintId, includes: teamHintsFound.includes(hintId) });
+    console.log('collectHint: check', { localHints, teamHintsFound, numHintId, includes: teamHintsFound.includes(numHintId) });
     
     // ヒントの内容を取得（人数とモニュメントIDに応じた内容）
     const getHintContent = function(hId) {
@@ -1331,7 +1336,7 @@ const CyberEscapeGame = () => {
     };
 
     // チームの誰かがクリア済みならヒントを表示（反射ゲーム不要）
-    if (teamHintsFound.includes(hintId)) {
+    if (teamHintsFound.includes(numHintId)) {
       // 既に取得済みの場合
       if (canSeeHint) {
         var fieldHints = getHintContent(hintId);
@@ -1359,24 +1364,30 @@ const CyberEscapeGame = () => {
     
     // クリア時のコールバック
     var onComplete = async function() {
+      // hintIdを数値に統一
+      var numId = Number(hintId);
+
       // ヒント取得を記録（ローカル状態とRef両方更新）
-      var newHints = hintsFoundRef.current.slice();
-      if (!newHints.includes(hintId)) {
-        newHints.push(hintId);
+      var currentHints = (hintsFoundRef.current || []).map(Number);
+      var newHints = currentHints.slice();
+      if (!newHints.includes(numId)) {
+        newHints.push(numId);
       }
       hintsFoundRef.current = newHints;  // Refを即座に更新
       setHintsFound(newHints);  // 状態も更新
 
       // Supabaseにも保存（チーム共有）
       try {
-        console.log('onComplete: ヒント保存開始', { hintId, teamNumber });
+        console.log('onComplete: ヒント保存開始', { numId, teamNumber });
         const team = await supabase.getTeam(teamNumber);
         console.log('onComplete: 現在のチームデータ', team);
         if (team) {
           const data = team.data || {};
           if (!data.hintsFound) data.hintsFound = [];
-          if (!data.hintsFound.includes(hintId)) {
-            data.hintsFound.push(hintId);
+          // 既存データも数値に統一してチェック
+          var existingHints = data.hintsFound.map(Number);
+          if (!existingHints.includes(numId)) {
+            data.hintsFound = [...existingHints, numId];
             console.log('onComplete: 保存するhintsFound', data.hintsFound);
             const updateResult = await supabase.updateTeam(teamNumber, data);
             console.log('onComplete: 保存結果', updateResult);
