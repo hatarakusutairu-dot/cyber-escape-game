@@ -1014,10 +1014,10 @@ const CyberEscapeGame = () => {
     setScreen('waiting');
   };
 
-  // チーム参加
+  // チーム参加（直接ロビーへ）
   const handleJoinTeam = async () => {
     if (!teamNumber.trim()) return;
-    
+
     // 数字のみに正規化
     const normalizedNumber = teamNumber.replace(/\D/g, '');
     const team = await supabase.getTeam(normalizedNumber);
@@ -1025,25 +1025,41 @@ const CyberEscapeGame = () => {
       alert('チームが見つかりません。チーム番号を確認してください。');
       return;
     }
-    
+
     const teamData = team.data;
-    
+
     // 人数上限チェック
     if (teamData.members && teamData.members.length >= teamData.maxMembers) {
       alert('このチームは満員です（' + teamData.maxMembers + '人）');
       return;
     }
-    
+
     // ゲーム開始済みチェック
     if (teamData.gameStarted) {
       alert('このチームはすでにゲームを開始しています');
       return;
     }
-    
+
     setTeamName(team.name);
     setTeamNumber(normalizedNumber);
     setTeamSize(teamData.maxMembers || 5);
-    setScreen('waiting');
+
+    // プレイヤーIDを生成してメンバーとして追加
+    const oderId = 'P' + Date.now();
+    setMyPlayerId(oderId);
+
+    if (!teamData.members) teamData.members = [];
+    teamData.members.push({
+      oderId: oderId,
+      joinTime: Date.now(),
+      roleIndex: undefined,
+      roleName: undefined
+    });
+
+    await supabase.updateTeam(normalizedNumber, teamData);
+    setLobbyData(teamData);
+    setRoleSelectTimer(45);
+    setScreen('lobby');  // 直接ロビーへ
   };
 
   // ゲーム開始（ロビー経由）
@@ -1203,10 +1219,24 @@ const CyberEscapeGame = () => {
       { name: '通信員', color: '#dda0dd', roleId: 'communicator' }
     ];
     const info = hintInfo[hintId] || { name: '不明', color: '#ffffff', roleId: 'unknown' };
-    
+
     // 自分がこのヒントを見れるかチェック（人数ベース）
     const myPermissions = role ? getHintPermissions(teamSize, role.id) : [];
     const canSeeHint = myPermissions.includes(hintId);
+
+    // Supabaseから最新のhintsFoundを取得（他プレイヤーのクリア状況を反映）
+    let teamHintsFound = hintsFound;
+    try {
+      const team = await supabase.getTeam(teamNumber);
+      if (team && team.data && team.data.hintsFound) {
+        teamHintsFound = team.data.hintsFound;
+        // ローカル状態も更新
+        setHintsFound(prev => {
+          const merged = [...new Set([...prev, ...teamHintsFound])];
+          return merged;
+        });
+      }
+    } catch (e) { console.error('fetchTeamHints error:', e); }
     
     // ヒントの内容を取得（人数とモニュメントIDに応じた内容）
     const getHintContent = function(hId) {
@@ -1271,8 +1301,9 @@ const CyberEscapeGame = () => {
       }
       return whoList.join('、') || '不明';
     };
-    
-    if (hintsFound.includes(hintId)) {
+
+    // チームの誰かがクリア済みならヒントを表示（反射ゲーム不要）
+    if (teamHintsFound.includes(hintId)) {
       // 既に取得済みの場合
       if (canSeeHint) {
         var fieldHints = getHintContent(hintId);
