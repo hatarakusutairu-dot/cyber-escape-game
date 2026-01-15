@@ -3258,36 +3258,65 @@ const CyberEscapeGame = () => {
   // 完了画面
   if (screen === 'complete') {
     return (
-      <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center p-4">
-        <div className="bg-gray-800 bg-opacity-90 p-8 rounded-lg shadow-2xl max-w-md w-full border border-cyan-500 text-center">
+      <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center p-4 overflow-auto">
+        <div className="bg-gray-800 bg-opacity-95 p-8 rounded-2xl shadow-2xl max-w-lg w-full border-2 border-cyan-500 text-center">
           {gameCompleted ? (
             <>
-              <h1 className="text-4xl font-bold text-green-400 mb-6">🎉 クリア！ 🎉</h1>
-              <p className="text-cyan-300 text-xl mb-4">おめでとうございます！</p>
-              <div className="text-white text-lg mb-6">
-                <p>チーム: {teamName}</p>
-                <p>番号: {teamNumber}</p>
-                <p className="text-2xl font-bold text-cyan-400 mt-4">
-                  クリアタイム: {formatTime(completionTime || 0)}
-                </p>
+              <div className="text-6xl mb-4">🎉</div>
+              <h1 className="text-5xl font-bold text-green-400 mb-4">脱出成功！</h1>
+              <p className="text-cyan-300 text-xl mb-6">おめでとうございます！</p>
+
+              <div className="bg-gray-900 rounded-xl p-6 mb-6">
+                <p className="text-gray-400 text-sm mb-2">チーム名</p>
+                <p className="text-white text-2xl font-bold mb-4">{teamName}</p>
+
+                <p className="text-gray-400 text-sm mb-2">チーム番号</p>
+                <p className="text-cyan-400 text-xl font-mono mb-4">{teamNumber}</p>
+
+                <div className="border-t border-gray-700 pt-4 mt-4">
+                  <p className="text-gray-400 text-sm mb-2">クリアタイム</p>
+                  <p className="text-4xl font-bold text-green-400 font-mono">
+                    {formatTime(completionTime || 0)}
+                  </p>
+                </div>
               </div>
+
+              <p className="text-gray-400 text-sm mb-6">
+                チームワークで見事に研究所からの脱出に成功しました！
+              </p>
             </>
           ) : (
             <>
-              <h1 className="text-4xl font-bold text-red-400 mb-6">時間切れ</h1>
-              <p className="text-cyan-300 text-xl mb-4">お疲れ様でした！</p>
-              <div className="text-white text-lg mb-6">
-                <p>チーム: {teamName}</p>
-                <p>番号: {teamNumber}</p>
-                <p>見つけたヒント: {hintsFound.length} / {getTeamSettings(teamSize).hintsRequired}</p>
+              <div className="text-6xl mb-4">⏰</div>
+              <h1 className="text-4xl font-bold text-red-400 mb-4">時間切れ</h1>
+              <p className="text-cyan-300 text-xl mb-6">お疲れ様でした！</p>
+
+              <div className="bg-gray-900 rounded-xl p-6 mb-6">
+                <p className="text-gray-400 text-sm mb-2">チーム名</p>
+                <p className="text-white text-2xl font-bold mb-4">{teamName}</p>
+
+                <p className="text-gray-400 text-sm mb-2">チーム番号</p>
+                <p className="text-cyan-400 text-xl font-mono mb-4">{teamNumber}</p>
+
+                <div className="border-t border-gray-700 pt-4 mt-4">
+                  <p className="text-gray-400 text-sm mb-2">収集したヒント</p>
+                  <p className="text-2xl font-bold text-yellow-400">
+                    {hintsFound.length} / {getTeamSettings(teamSize).hintsRequired}
+                  </p>
+                </div>
               </div>
+
+              <p className="text-gray-400 text-sm mb-6">
+                惜しい！もう少しで脱出できたかも...
+              </p>
             </>
           )}
+
           <button
             onClick={() => window.location.reload()}
-            className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded transition"
+            className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-4 rounded-xl transition text-lg shadow-lg"
           >
-            もう一度プレイ
+            🔄 もう一度プレイ
           </button>
         </div>
       </div>
