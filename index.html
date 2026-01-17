@@ -48,6 +48,8 @@ const CyberEscapeGame = () => {
   const [timeLeft, setTimeLeft] = useState(900);
   const [timerStarted, setTimerStarted] = useState(false);
   const [hintsFound, setHintsFound] = useState([]);
+  const [hintsUnlocked, setHintsUnlocked] = useState([]);  // 反射ゲームクリア済み（まだ開けていない）
+  const hintsUnlockedRef = useRef([]);  // 最新の値を参照
   const hintsFoundRef = useRef([]);  // 最新の値を常に参照できるようにRef
   const [puzzlesSolved, setPuzzlesSolved] = useState([]);
   const [nearbyObject, setNearbyObject] = useState(null);
@@ -59,6 +61,8 @@ const CyberEscapeGame = () => {
   const [puzzleError, setPuzzleError] = useState('');
   const [teamSize, setTeamSize] = useState(5);
   const [gameCompleted, setGameCompleted] = useState(false);
+  const [showEscapeAnimation, setShowEscapeAnimation] = useState(false);  // 脱出演出表示中
+  const [rankings, setRankings] = useState([]);  // ランキングデータ
   const [completionTime, setCompletionTime] = useState(null);
   
   // ボクセルパズル用ステート
@@ -1195,6 +1199,17 @@ const CyberEscapeGame = () => {
         hintsFoundRef.current = [...new Set([...(hintsFoundRef.current || []).map(Number), ...supabaseHints])];
       }
 
+      // チームのhintsUnlockedを同期（数値型に統一）
+      if (data.hintsUnlocked && data.hintsUnlocked.length > 0) {
+        const supabaseUnlocked = data.hintsUnlocked.map(Number);
+        setHintsUnlocked(prev => {
+          const prevNums = prev.map(Number);
+          const merged = [...new Set([...prevNums, ...supabaseUnlocked])];
+          return merged.length !== prevNums.length ? merged : prev;
+        });
+        hintsUnlockedRef.current = [...new Set([...(hintsUnlockedRef.current || []).map(Number), ...supabaseUnlocked])];
+      }
+
       data.members.forEach(member => {
         if (member.oderId === myPlayerId) return;
         if (!member.position) return;
@@ -1252,7 +1267,8 @@ const CyberEscapeGame = () => {
     return permissions[size]?.[roleId] || [];
   };
 
-  // ヒント取得（反射神経ゲーム経由）
+  // ヒント取得（二段階システム：反射ゲーム→権限者が開封）
+  // Supabaseから最新状態を取得してから判定
   const collectHint = async (hintId) => {
     const hintInfo = [
       { name: 'リーダー', color: '#ffd700', roleId: 'leader' },
@@ -1266,105 +1282,68 @@ const CyberEscapeGame = () => {
     // 自分がこのヒントを見れるかチェック（人数ベース）
     const myPermissions = role ? getHintPermissions(teamSize, role.id) : [];
     const canSeeHint = myPermissions.includes(hintId);
-
-    // hintIdを数値に統一
     const numHintId = Number(hintId);
 
-    // ローカル状態（Ref経由で最新値）とSupabaseの両方をチェック
-    const localHints = (hintsFoundRef.current || []).map(Number);
-    let teamHintsFound = [...localHints];
+    // Supabaseから最新状態を取得（他プレイヤーの更新を反映）
+    let teamHintsFound = [...(hintsFoundRef.current || []).map(Number)];
+    let teamHintsUnlocked = [...(hintsUnlockedRef.current || []).map(Number)];
     try {
       const team = await supabase.getTeam(teamNumber);
-      console.log('collectHint: Supabaseデータ', { teamData: team?.data, hintsFound: team?.data?.hintsFound });
-      if (team && team.data && team.data.hintsFound && Array.isArray(team.data.hintsFound)) {
-        // 数値に統一してマージ
-        const supabaseHints = team.data.hintsFound.map(Number);
-        teamHintsFound = [...new Set([...localHints, ...supabaseHints])];
-        // ローカル状態も更新
-        setHintsFound(teamHintsFound);
-        hintsFoundRef.current = teamHintsFound;
+      if (team && team.data) {
+        if (team.data.hintsFound) {
+          const sf = team.data.hintsFound.map(Number);
+          teamHintsFound = [...new Set([...teamHintsFound, ...sf])];
+          setHintsFound(teamHintsFound);
+          hintsFoundRef.current = teamHintsFound;
+        }
+        if (team.data.hintsUnlocked) {
+          const su = team.data.hintsUnlocked.map(Number);
+          teamHintsUnlocked = [...new Set([...teamHintsUnlocked, ...su])];
+          setHintsUnlocked(teamHintsUnlocked);
+          hintsUnlockedRef.current = teamHintsUnlocked;
+        }
       }
-    } catch (e) { console.error('fetchTeamHints error:', e); }
+    } catch (e) { console.error('syncHints error:', e); }
 
-    console.log('collectHint: check', { localHints, teamHintsFound, numHintId, includes: teamHintsFound.includes(numHintId) });
-    
-    // ヒントの内容を取得（人数とモニュメントIDに応じた内容）
-    const getHintContent = function(hId) {
-      // 人数別のヒント内容（各モニュメント専用）
-      var contents = {
-        2: {
-          // リーダーが見れる3つ
-          0: ['▲は1番目'],
-          1: ['★は3番目'],
-          2: ['●は■より後ろ'],
-          // 解読員が見れる2つ
-          3: ['数列：3, 4, 5, ?, ?', '■は2番目'],
-          4: ['◆は最後', '?は0と4'],
-        },
-        3: {
-          // リーダーが見れる2つ
-          0: ['1番目は3角の形'],
-          1: ['4角の形は2つある'],
-          // 解読員が見れる2つ
-          2: ['数列：3, 4, 5, 0, 4'],
-          3: ['この数列が順番を決める'],
-          // 調査員が見れる1つ
-          4: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'],
-        },
-        4: {
-          // リーダー1つ
-          0: ['答えは5つの形の列'],
-          // 解読員2つ
-          1: ['角の数で順番が決まる'],
-          2: ['3番目は5角'],
-          // 調査員1つ
-          3: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'],
-          // 分析員1つ
-          4: ['数列完成：3,4,5,0,4', '4番目は0'],
-        },
-        5: {
-          0: ['全員の情報を統合せよ'],
-          1: ['角の数が順番の法則'],
-          2: ['青=▲ 緑=■', '黄=★ 赤=● 紫=◆'],
-          3: ['数列：3,4,5,0,4'],
-          4: ['4角の形は2つある', '■が先、◆が後'],
-        },
+    // ヒントの内容を取得
+    const getHintContent = (hId) => {
+      const contents = {
+        2: { 0: ['▲は1番目'], 1: ['★は3番目'], 2: ['●は■より後ろ'], 3: ['数列：3, 4, 5, ?, ?', '■は2番目'], 4: ['◆は最後', '?は0と4'] },
+        3: { 0: ['1番目は3角の形'], 1: ['4角の形は2つある'], 2: ['数列：3, 4, 5, 0, 4'], 3: ['この数列が順番を決める'], 4: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'] },
+        4: { 0: ['答えは5つの形の列'], 1: ['角の数で順番が決まる'], 2: ['3番目は5角'], 3: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'], 4: ['数列完成：3,4,5,0,4', '4番目は0'] },
+        5: { 0: ['全員の情報を統合せよ'], 1: ['角の数が順番の法則'], 2: ['青=▲ 緑=■', '黄=★ 赤=● 紫=◆'], 3: ['数列：3,4,5,0,4'], 4: ['4角の形は2つある', '■が先、◆が後'] },
       };
       return contents[teamSize]?.[hId] || ['ヒントなし'];
     };
-    
+
     // 誰が見れるヒントか表示用
-    const getWhoCanSee = function(hId) {
-      var whoList = [];
-      var perms = {
+    const getWhoCanSee = (hId) => {
+      const perms = {
         2: { leader: [0,1,2], decoder: [3,4] },
         3: { leader: [0,1], decoder: [2,3], investigator: [4] },
         4: { leader: [0], decoder: [1,2], investigator: [3], analyst: [4] },
         5: { leader: [0], decoder: [1], investigator: [2], analyst: [3], communicator: [4] },
       };
-      var names = { leader: 'リーダー', decoder: '解読員', investigator: '調査員', analyst: '分析員', communicator: '通信員' };
-      var sizePerms = perms[teamSize] || {};
-      for (var r in sizePerms) {
-        if (sizePerms[r].includes(hId)) {
-          whoList.push(names[r]);
-        }
+      const names = { leader: 'リーダー', decoder: '解読員', investigator: '調査員', analyst: '分析員', communicator: '通信員' };
+      const sizePerms = perms[teamSize] || {};
+      const whoList = [];
+      for (const r in sizePerms) {
+        if (sizePerms[r].includes(hId)) whoList.push(names[r]);
       }
       return whoList.join('、') || '不明';
     };
 
-    // チームの誰かがクリア済みならヒントを表示（反射ゲーム不要）
+    // ===== ステージ3: 既にヒントが開封済み =====
     if (teamHintsFound.includes(numHintId)) {
-      // 既に取得済みの場合
       if (canSeeHint) {
-        var fieldHints = getHintContent(hintId);
         setCurrentHint({
-          title: 'ヒント #' + (hintId + 1) + '（取得済み）',
-          message: fieldHints.join('\n'),
+          title: 'ヒント #' + (hintId + 1) + '（開封済み）',
+          message: getHintContent(hintId).join('\n'),
           color: info.color
         });
       } else {
         setCurrentHint({
-          title: 'ヒント #' + (hintId + 1) + '（取得済み）',
+          title: 'ヒント #' + (hintId + 1) + '（開封済み）',
           message: '🔒 このヒントは「' + getWhoCanSee(hintId) + '」が見れます。\n\nチームメンバーに内容を確認してもらいましょう！',
           color: '#666666'
         });
@@ -1372,70 +1351,89 @@ const CyberEscapeGame = () => {
       setShowHintModal(true);
       return;
     }
-    
-    // 反射神経ゲームを開始（誰でもクリア可能）
-    var difficulty = getDifficultyFromTeamSize(teamSize);
-    var canSee = canSeeHint;
-    var hContent = getHintContent(hintId);
-    var whoSees = getWhoCanSee(hintId);
-    
-    // クリア時のコールバック
-    var onComplete = async function() {
-      // hintIdを数値に統一
-      var numId = Number(hintId);
 
-      // ヒント取得を記録（ローカル状態とRef両方更新）
-      var currentHints = (hintsFoundRef.current || []).map(Number);
-      var newHints = currentHints.slice();
-      if (!newHints.includes(numId)) {
-        newHints.push(numId);
-      }
-      hintsFoundRef.current = newHints;  // Refを即座に更新
-      setHintsFound(newHints);  // 状態も更新
+    // ===== ステージ2: 反射ゲームクリア済み =====
+    if (teamHintsUnlocked.includes(numHintId)) {
+      if (canSeeHint) {
+        const confirmed = window.confirm('このヒントを開封しますか？\n開封するとリーダーの中央コンソールに表示されます。');
+        if (confirmed) {
+          // ローカル状態を即座に更新
+          const newHintsFound = [...new Set([...teamHintsFound, numHintId])];
+          setHintsFound(newHintsFound);
+          hintsFoundRef.current = newHintsFound;
 
-      // Supabaseにも保存（チーム共有）
-      try {
-        console.log('onComplete: ヒント保存開始', { numId, teamNumber });
-        const team = await supabase.getTeam(teamNumber);
-        console.log('onComplete: 現在のチームデータ', team);
-        if (team) {
-          const data = team.data || {};
-          if (!data.hintsFound) data.hintsFound = [];
-          // 既存データも数値に統一してチェック
-          var existingHints = data.hintsFound.map(Number);
-          if (!existingHints.includes(numId)) {
-            data.hintsFound = [...existingHints, numId];
-            console.log('onComplete: 保存するhintsFound', data.hintsFound);
-            const updateResult = await supabase.updateTeam(teamNumber, data);
-            console.log('onComplete: 保存結果', updateResult);
-          } else {
-            console.log('onComplete: 既に保存済み', data.hintsFound);
-          }
+          // Supabaseに非同期で保存（待たない）
+          (async () => {
+            try {
+              const team = await supabase.getTeam(teamNumber);
+              if (team) {
+                const data = team.data || {};
+                data.hintsFound = [...new Set([...(data.hintsFound || []).map(Number), numHintId])];
+                await supabase.updateTeam(teamNumber, data);
+              }
+            } catch (e) { console.error('saveHintFound error:', e); }
+          })();
+
+          setCurrentHint({
+            title: 'ヒント #' + (hintId + 1) + '（開封完了！）',
+            message: getHintContent(hintId).join('\n') + '\n\n✅ リーダーの中央コンソールに追加されました！',
+            color: info.color
+          });
+        } else {
+          setCurrentHint({
+            title: 'ヒント #' + (hintId + 1) + '（解除済み）',
+            message: '⏳ 開封を保留しました。\n\n再度Eキーを押すと開封できます。',
+            color: '#ffaa00'
+          });
         }
-      } catch (e) { console.error('saveHintToSupabase error:', e); }
-
-      // ヒント表示
-      if (canSee) {
-        setCurrentHint({
-          title: 'ヒント #' + (hintId + 1),
-          message: hContent.join('\n'),
-          color: info.color
-        });
       } else {
         setCurrentHint({
-          title: 'ヒント #' + (hintId + 1),
-          message: '✅ ヒントを解除しました！\n\n🔒 このヒントは「' + whoSees + '」が見れます。\n\nチームメンバーに内容を確認してもらいましょう！',
-          color: '#666666'
+          title: 'ヒント #' + (hintId + 1) + '（解除済み）',
+          message: '🔓 反射ゲームはクリア済みです！\n\n📢 「' + getWhoCanSee(hintId) + '」がこのオブジェクトでEキーを押すと開封できます。\n\nチームメンバーに開封を依頼しましょう！',
+          color: '#ffaa00'
         });
       }
       setShowHintModal(true);
+      return;
+    }
+
+    // ===== ステージ1: 反射ゲーム開始 =====
+    const difficulty = getDifficultyFromTeamSize(teamSize);
+    const whoSees = getWhoCanSee(hintId);
+
+    const onComplete = () => {
+      const numId = Number(hintId);
+
+      // ローカル状態を即座に更新
+      const newUnlocked = [...new Set([...(hintsUnlockedRef.current || []).map(Number), numId])];
+      hintsUnlockedRef.current = newUnlocked;
+      setHintsUnlocked(newUnlocked);
+
+      // Supabaseに非同期で保存（待たない）
+      (async () => {
+        try {
+          const team = await supabase.getTeam(teamNumber);
+          if (team) {
+            const data = team.data || {};
+            data.hintsUnlocked = [...new Set([...(data.hintsUnlocked || []).map(Number), numId])];
+            await supabase.updateTeam(teamNumber, data);
+          }
+        } catch (e) { console.error('saveHintUnlocked error:', e); }
+      })();
+
+      setCurrentHint({
+        title: 'ヒント #' + (hintId + 1) + '（解除成功！）',
+        message: '🔓 反射ゲームクリア！\n\n📢 次は「' + whoSees + '」がこのオブジェクトでEキーを押すとヒントを開封できます。\n\n' + (canSeeHint ? '👉 あなたが開封できます！もう一度Eキーを押してください。' : '権限のあるチームメンバーに開封を依頼しましょう！'),
+        color: '#00ff88'
+      });
+      setShowHintModal(true);
     };
-    
-    var onClose = function() {
-      var existing = document.getElementById('reflex-game-container');
+
+    const onClose = () => {
+      const existing = document.getElementById('reflex-game-container');
       if (existing) existing.remove();
     };
-    
+
     startReflexGame(difficulty, 'hint', onComplete, onClose);
   };
 
@@ -1495,7 +1493,24 @@ const CyberEscapeGame = () => {
         }
       } catch (e) { console.error('saveCompletion error:', e); }
 
-      setScreen('complete');
+      // ランキングを取得
+      try {
+        const allTeams = await supabase.getAllTeams();
+        const completedTeams = allTeams
+          .filter(t => t.data && t.data.completed)
+          .map(t => ({
+            name: t.name,
+            code: t.code,
+            time: t.data.completionTime,
+            size: t.data.maxMembers || t.size || 5
+          }))
+          .sort((a, b) => a.time - b.time);
+        setRankings(completedTeams);
+      } catch (e) { console.error('fetchRankings error:', e); }
+
+      // 脱出演出を表示
+      setShowEscapeAnimation(true);
+      setScreen('escaping');
     } else {
       setPuzzleError('不正解です。ヒントを確認して再度入力してください。');
     }
@@ -1505,6 +1520,11 @@ const CyberEscapeGame = () => {
   useEffect(() => {
     hintsFoundRef.current = hintsFound;
   }, [hintsFound]);
+
+  // hintsUnlockedRefを常に最新に保つ
+  useEffect(() => {
+    hintsUnlockedRef.current = hintsUnlocked;
+  }, [hintsUnlocked]);
 
   // タイマー
   useEffect(() => {
@@ -1522,15 +1542,24 @@ const CyberEscapeGame = () => {
     }
   }, [timerStarted, timeLeft, screen]);
 
+  // インタラクション処理用のRef（クロージャ問題を回避）
+  const nearbyObjectRef = useRef(null);
+  const roleRef = useRef(null);
+  useEffect(() => { nearbyObjectRef.current = nearbyObject; }, [nearbyObject]);
+  useEffect(() => { roleRef.current = role; }, [role]);
+
   // インタラクション処理（ボタンとキーの両方から呼び出し可能）
   const handleInteraction = () => {
-    if (nearbyObject) {
-      if (nearbyObject.type === 'hint') {
-        collectHint(nearbyObject.id);
-      } else if (nearbyObject.type === 'puzzle') {
+    const currentNearbyObject = nearbyObjectRef.current;
+    const currentRole = roleRef.current;
+    if (currentNearbyObject) {
+      if (currentNearbyObject.type === 'hint') {
+        collectHint(currentNearbyObject.id);
+      } else if (currentNearbyObject.type === 'puzzle') {
         // 中央コンソールはリーダーのみ操作可能
-        if (role?.id !== 'leader') {
-          alert('中央コンソールはリーダーのみ操作できます。\nリーダーに操作を依頼してください。');
+        if (currentRole?.id !== 'leader') {
+          alert('中央コンソールはリーダーのみ操作できます。
+リーダーに操作を依頼してください。');
           return;
         }
         setShowPuzzleModal(true);
@@ -1548,7 +1577,7 @@ const CyberEscapeGame = () => {
     
     window.addEventListener('keydown', onKeyDown);
     return function() { window.removeEventListener('keydown', onKeyDown); };
-  }, [nearbyObject, hintsFound]);
+  }, []);
 
   // Three.js シーン
   useEffect(() => {
@@ -3308,60 +3337,185 @@ const CyberEscapeGame = () => {
     );
   }
 
-  // 完了画面
+  // 脱出演出画面
+  if (screen === 'escaping') {
+    return (
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center overflow-hidden">
+        {/* 脱出アニメーション */}
+        <div className="relative w-full h-2/3 overflow-hidden">
+          {/* 研究所の背景 */}
+          <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-blue-900 to-purple-900">
+            {/* 建物シルエット */}
+            <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-96 h-64 bg-gray-800 rounded-t-lg border-t-4 border-cyan-500">
+              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 text-cyan-400 text-xl font-bold">
+                🏢 サイバー研究所
+              </div>
+              {/* 窓 */}
+              <div className="absolute top-16 left-8 w-12 h-8 bg-cyan-900 rounded"></div>
+              <div className="absolute top-16 right-8 w-12 h-8 bg-cyan-900 rounded"></div>
+              <div className="absolute top-32 left-8 w-12 h-8 bg-cyan-900 rounded"></div>
+              <div className="absolute top-32 right-8 w-12 h-8 bg-cyan-900 rounded"></div>
+              {/* ドア（開いている） */}
+              <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-20 h-24 bg-green-500 rounded-t-lg flex items-center justify-center">
+                <span className="text-4xl">🚪</span>
+              </div>
+            </div>
+
+            {/* アバターたちが走り出す */}
+            <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 flex space-x-4 animate-bounce">
+              {[
+                { emoji: '🧑‍💼', color: 'text-yellow-400', name: 'リーダー' },
+                { emoji: '🧑‍🔬', color: 'text-red-400', name: '解読員' },
+                { emoji: '🕵️', color: 'text-cyan-400', name: '調査員' },
+                { emoji: '📊', color: 'text-green-400', name: '分析員' },
+                { emoji: '📡', color: 'text-purple-400', name: '通信員' }
+              ].slice(0, teamSize).map((member, idx) => (
+                <div
+                  key={idx}
+                  className="flex flex-col items-center transform transition-all duration-1000"
+                  style={{
+                    animation: `escapeRun 2s ease-out ${idx * 0.2}s forwards`
+                  }}
+                >
+                  <span className="text-4xl">{member.emoji}</span>
+                  <span className={`text-xs ${member.color} font-bold`}>{member.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 成功メッセージ */}
+          <div className="absolute top-8 left-1/2 transform -translate-x-1/2 text-center">
+            <div className="text-6xl mb-4 animate-pulse">🎉</div>
+            <h1 className="text-4xl font-bold text-green-400 animate-pulse">脱出成功！</h1>
+          </div>
+        </div>
+
+        {/* クリアタイム表示 */}
+        <div className="text-center mt-8">
+          <p className="text-gray-400 text-lg mb-2">クリアタイム</p>
+          <p className="text-5xl font-bold text-green-400 font-mono">
+            {formatTime(completionTime || 0)}
+          </p>
+        </div>
+
+        {/* 結果を見るボタン */}
+        <button
+          onClick={() => setScreen('complete')}
+          className="mt-8 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-4 px-12 rounded-xl transition text-xl shadow-lg animate-pulse"
+        >
+          🏆 ランキングを見る
+        </button>
+
+        {/* 脱出アニメーション用CSS */}
+        <style>{`
+          @keyframes escapeRun {
+            0% { transform: translateY(0) translateX(0); opacity: 1; }
+            50% { transform: translateY(-20px) translateX(50px); opacity: 1; }
+            100% { transform: translateY(-100px) translateX(200px); opacity: 0; }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+    // 完了画面
   if (screen === 'complete') {
+    // 自分のランキング順位を取得
+    const myRank = rankings.findIndex(t => t.code === teamNumber) + 1;
+
     return (
       <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center p-4 overflow-auto">
-        <div className="bg-gray-800 bg-opacity-95 p-8 rounded-2xl shadow-2xl max-w-lg w-full border-2 border-cyan-500 text-center">
+        <div className="bg-gray-800 bg-opacity-95 p-8 rounded-2xl shadow-2xl max-w-2xl w-full border-2 border-cyan-500">
           {gameCompleted ? (
             <>
-              <div className="text-6xl mb-4">🎉</div>
-              <h1 className="text-5xl font-bold text-green-400 mb-4">脱出成功！</h1>
-              <p className="text-cyan-300 text-xl mb-6">おめでとうございます！</p>
+              <div className="text-center mb-6">
+                <div className="text-6xl mb-4">🎉</div>
+                <h1 className="text-4xl font-bold text-green-400 mb-2">脱出成功！</h1>
+                <p className="text-cyan-300 text-lg">おめでとうございます！</p>
+              </div>
 
-              <div className="bg-gray-900 rounded-xl p-6 mb-6">
-                <p className="text-gray-400 text-sm mb-2">チーム名</p>
-                <p className="text-white text-2xl font-bold mb-4">{teamName}</p>
+              <div className="bg-gray-900 rounded-xl p-6 mb-6 text-center">
+                <p className="text-gray-400 text-sm mb-1">チーム名</p>
+                <p className="text-white text-2xl font-bold mb-3">{teamName}</p>
 
-                <p className="text-gray-400 text-sm mb-2">チーム番号</p>
-                <p className="text-cyan-400 text-xl font-mono mb-4">{teamNumber}</p>
-
-                <div className="border-t border-gray-700 pt-4 mt-4">
-                  <p className="text-gray-400 text-sm mb-2">クリアタイム</p>
-                  <p className="text-4xl font-bold text-green-400 font-mono">
-                    {formatTime(completionTime || 0)}
-                  </p>
+                <div className="flex justify-center items-center gap-8 mb-4">
+                  <div>
+                    <p className="text-gray-400 text-sm mb-1">クリアタイム</p>
+                    <p className="text-3xl font-bold text-green-400 font-mono">
+                      {formatTime(completionTime || 0)}
+                    </p>
+                  </div>
+                  {myRank > 0 && (
+                    <div>
+                      <p className="text-gray-400 text-sm mb-1">順位</p>
+                      <p className="text-3xl font-bold text-yellow-400">
+                        {myRank === 1 ? '🥇' : myRank === 2 ? '🥈' : myRank === 3 ? '🥉' : ''} {myRank}位
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <p className="text-gray-400 text-sm mb-6">
-                チームワークで見事に研究所からの脱出に成功しました！
-              </p>
+              {/* ランキング表示 */}
+              {rankings.length > 0 && (
+                <div className="mb-6">
+                  <h2 className="text-xl font-bold text-cyan-400 mb-3 text-center">🏆 ランキング</h2>
+                  <div className="bg-gray-900 rounded-lg border border-cyan-500 overflow-hidden max-h-60 overflow-y-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-700 sticky top-0">
+                        <tr>
+                          <th className="py-2 px-3 text-left text-gray-300 text-sm">順位</th>
+                          <th className="py-2 px-3 text-left text-gray-300 text-sm">チーム名</th>
+                          <th className="py-2 px-3 text-right text-gray-300 text-sm">タイム</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rankings.map((team, idx) => (
+                          <tr
+                            key={team.code}
+                            className={`${team.code === teamNumber ? 'bg-cyan-900 bg-opacity-50' : idx % 2 === 0 ? 'bg-gray-800' : 'bg-gray-850'}`}
+                          >
+                            <td className="py-2 px-3 text-white font-bold">
+                              {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : ''} {idx + 1}
+                            </td>
+                            <td className={`py-2 px-3 ${team.code === teamNumber ? 'text-cyan-300 font-bold' : 'text-white'}`}>
+                              {team.name} {team.code === teamNumber && '(あなた)'}
+                            </td>
+                            <td className="py-2 px-3 text-right text-green-400 font-mono">
+                              {formatTime(team.time)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <>
-              <div className="text-6xl mb-4">⏰</div>
-              <h1 className="text-4xl font-bold text-red-400 mb-4">時間切れ</h1>
-              <p className="text-cyan-300 text-xl mb-6">お疲れ様でした！</p>
+              <div className="text-center">
+                <div className="text-6xl mb-4">⏰</div>
+                <h1 className="text-4xl font-bold text-red-400 mb-4">時間切れ</h1>
+                <p className="text-cyan-300 text-xl mb-6">お疲れ様でした！</p>
 
-              <div className="bg-gray-900 rounded-xl p-6 mb-6">
-                <p className="text-gray-400 text-sm mb-2">チーム名</p>
-                <p className="text-white text-2xl font-bold mb-4">{teamName}</p>
+                <div className="bg-gray-900 rounded-xl p-6 mb-6">
+                  <p className="text-gray-400 text-sm mb-2">チーム名</p>
+                  <p className="text-white text-2xl font-bold mb-4">{teamName}</p>
 
-                <p className="text-gray-400 text-sm mb-2">チーム番号</p>
-                <p className="text-cyan-400 text-xl font-mono mb-4">{teamNumber}</p>
-
-                <div className="border-t border-gray-700 pt-4 mt-4">
-                  <p className="text-gray-400 text-sm mb-2">収集したヒント</p>
-                  <p className="text-2xl font-bold text-yellow-400">
-                    {hintsFound.length} / {getTeamSettings(teamSize).hintsRequired}
-                  </p>
+                  <div className="border-t border-gray-700 pt-4 mt-4">
+                    <p className="text-gray-400 text-sm mb-2">収集したヒント</p>
+                    <p className="text-2xl font-bold text-yellow-400">
+                      {hintsFound.length} / {getTeamSettings(teamSize).hintsRequired}
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              <p className="text-gray-400 text-sm mb-6">
-                惜しい！もう少しで脱出できたかも...
-              </p>
+                <p className="text-gray-400 text-sm mb-6">
+                  惜しい！もう少しで脱出できたかも...
+                </p>
+              </div>
             </>
           )}
 
