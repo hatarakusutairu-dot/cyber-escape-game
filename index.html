@@ -1558,8 +1558,7 @@ const CyberEscapeGame = () => {
       } else if (currentNearbyObject.type === 'puzzle') {
         // 中央コンソールはリーダーのみ操作可能
         if (currentRole?.id !== 'leader') {
-          alert('中央コンソールはリーダーのみ操作できます。
-リーダーに操作を依頼してください。');
+          alert('中央コンソールはリーダーのみ操作できます。\nリーダーに操作を依頼してください。');
           return;
         }
         setShowPuzzleModal(true);
