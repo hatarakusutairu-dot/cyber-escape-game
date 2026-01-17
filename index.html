@@ -557,7 +557,8 @@ const CyberEscapeGame = () => {
     
     if (latestData.gameStarted) return;
     
-    const maxMembers = latestData.maxMembers || teamSize;
+    // team.sizeを使用（teamSize状態はstale closureになる可能性があるため）
+    const maxMembers = latestData.maxMembers || team.size || 2;
     const availableRoles = getRolesForTeamSize(maxMembers);
     
     // 未選択のメンバーに役割を自動割り当て
@@ -584,12 +585,18 @@ const CyberEscapeGame = () => {
     
     // 自分の役割を設定してゲーム画面へ
     const myEntry = latestData.members.find(function(m) { return m.oderId === myPlayerId; });
-    if (myEntry && myEntry.roleIndex !== undefined) {
-      const myRole = availableRoles[myEntry.roleIndex];
-      setRole(myRole);
-      setAssignedRoles([myRole]);
-      setSelectedRole(myEntry.roleIndex);
+    if (!myEntry) {
+      console.error('autoAssignAndStart: myEntryが見つからない myPlayerId=' + myPlayerId);
+      return;
     }
+    if (myEntry.roleIndex === undefined) {
+      console.error('autoAssignAndStart: roleIndexが未定義');
+      return;
+    }
+    const myRole = availableRoles[myEntry.roleIndex];
+    setRole(myRole);
+    setAssignedRoles([myRole]);
+    setSelectedRole(myEntry.roleIndex);
     
     setTeamSize(maxMembers);
     setTimeLeft(getTeamSettings(maxMembers).timeLimit);
@@ -1372,9 +1379,6 @@ const CyberEscapeGame = () => {
     const numHintId = Number(hintId);  // 最初に数値型に統一
     const myPermissions = role ? getHintPermissions(teamSize, role.id) : [];
     const canSeeHint = myPermissions.includes(numHintId);
-    
-    // デバッグ: 値を確認（問題解決後に削除）
-    alert('teamSize=' + teamSize + ', role.id=' + (role ? role.id : 'undefined') + ', hintId=' + numHintId + ', permissions=[' + myPermissions.join(',') + '], canSee=' + canSeeHint);
     
     // Supabaseから最新状態を取得（他プレイヤーの更新を反映）
     let teamHintsFound = [...(hintsFoundRef.current || []).map(Number)];
