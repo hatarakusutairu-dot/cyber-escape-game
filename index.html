@@ -655,6 +655,8 @@ const CyberEscapeGame = () => {
     
     await supabase.updateTeam(teamNumber, data);
     setLobbyData(data);
+    // 重要: チームサイズを正しく設定（data.maxMembers または team.size から）
+    setTeamSize(data.maxMembers || team.size || 5);
     setRoleSelectTimer(45);
     setScreen('lobby');
   };
@@ -1145,7 +1147,7 @@ const CyberEscapeGame = () => {
 
     setTeamName(team.name);
     setTeamNumber(normalizedNumber);
-    setTeamSize(teamData.maxMembers || 5);
+    setTeamSize(teamData.maxMembers || team.size || 5);
 
     // プレイヤーIDを生成してメンバーとして追加
     const oderId = 'P' + Date.now();
