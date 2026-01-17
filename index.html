@@ -1289,9 +1289,9 @@ const CyberEscapeGame = () => {
     const info = hintInfo[hintId] || { name: '不明', color: '#ffffff', roleId: 'unknown' };
 
     // 自分がこのヒントを見れるかチェック（人数ベース）
+    const numHintId = Number(hintId);  // 最初に数値型に統一
     const myPermissions = role ? getHintPermissions(teamSize, role.id) : [];
-    const canSeeHint = myPermissions.includes(hintId);
-    const numHintId = Number(hintId);
+    const canSeeHint = myPermissions.includes(numHintId);
 
     // Supabaseから最新状態を取得（他プレイヤーの更新を反映）
     let teamHintsFound = [...(hintsFoundRef.current || []).map(Number)];
@@ -1327,6 +1327,7 @@ const CyberEscapeGame = () => {
 
     // 誰が見れるヒントか表示用
     const getWhoCanSee = (hId) => {
+      const numId = Number(hId);  // 数値型に統一
       const perms = {
         2: { leader: [0,1], decoder: [2,3,4] },
         3: { leader: [0,1], decoder: [2,3], investigator: [4] },
@@ -1337,7 +1338,7 @@ const CyberEscapeGame = () => {
       const sizePerms = perms[teamSize] || {};
       const whoList = [];
       for (const r in sizePerms) {
-        if (sizePerms[r].includes(hId)) whoList.push(names[r]);
+        if (sizePerms[r].includes(numId)) whoList.push(names[r]);
       }
       return whoList.join('、') || '不明';
     };
@@ -1346,13 +1347,13 @@ const CyberEscapeGame = () => {
     if (teamHintsFound.includes(numHintId)) {
       if (canSeeHint) {
         setCurrentHint({
-          title: 'ヒント #' + (hintId + 1) + '（開封済み）',
-          message: getHintContent(hintId).join('\n'),
+          title: 'ヒント #' + (numHintId + 1) + '（開封済み）',
+          message: getHintContent(numHintId).join('\n'),
           color: info.color
         });
       } else {
         setCurrentHint({
-          title: 'ヒント #' + (hintId + 1) + '（開封済み）',
+          title: 'ヒント #' + (numHintId + 1) + '（開封済み）',
           message: '🔒 このヒントは「' + getWhoCanSee(hintId) + '」が見れます。\n\nチームメンバーに内容を確認してもらいましょう！',
           color: '#666666'
         });
@@ -1391,20 +1392,20 @@ const CyberEscapeGame = () => {
           })();
 
           setCurrentHint({
-            title: 'ヒント #' + (hintId + 1) + '（開封完了！）',
-            message: getHintContent(hintId).join('\n') + '\n\n✅ リーダーの中央コンソールに追加されました！',
+            title: 'ヒント #' + (numHintId + 1) + '（開封完了！）',
+            message: getHintContent(numHintId).join('\n') + '\n\n✅ リーダーの中央コンソールに追加されました！',
             color: info.color
           });
         } else {
           setCurrentHint({
-            title: 'ヒント #' + (hintId + 1) + '（解除済み）',
+            title: 'ヒント #' + (numHintId + 1) + '（解除済み）',
             message: '⏳ 開封を保留しました。\n\n再度Eキーを押すと開封できます。',
             color: '#ffaa00'
           });
         }
       } else {
         setCurrentHint({
-          title: 'ヒント #' + (hintId + 1) + '（解除済み）',
+          title: 'ヒント #' + (numHintId + 1) + '（解除済み）',
           message: '🔓 反射ゲームはクリア済みです！\n\n📢 「' + getWhoCanSee(hintId) + '」がこのオブジェクトでEキーを押すと開封できます。\n\nチームメンバーに開封を依頼しましょう！',
           color: '#ffaa00'
         });
@@ -1444,7 +1445,7 @@ const CyberEscapeGame = () => {
       } catch (e) { console.error('saveHintUnlocked error:', e); }
 
       setCurrentHint({
-        title: 'ヒント #' + (hintId + 1) + '（解除成功！）',
+        title: 'ヒント #' + (numHintId + 1) + '（解除成功！）',
         message: '🔓 反射ゲームクリア！\n\n📢 次は「' + whoSees + '」がこのオブジェクトでEキーを押すとヒントを開封できます。\n\n' + (canSeeHint ? '👉 あなたが開封できます！もう一度Eキーを押してください。' : '権限のあるチームメンバーに開封を依頼しましょう！'),
         color: '#00ff88'
       });
