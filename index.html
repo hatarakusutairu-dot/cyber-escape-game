@@ -103,7 +103,43 @@ const CyberEscapeGame = () => {
   // ボクセルパズルコンポーネント
   // 反射神経ゲームをDOM直接操作で実装（Reactの再レンダリングから完全に独立）
   const reflexGameContainerRef = useRef(null);
-  
+
+  // ===== localStorage でゲーム状態を保持（ページリフレッシュ対応）=====
+  const STORAGE_KEY = 'cyberEscapeGameState';
+
+  // ゲーム状態を保存
+  const saveGameState = (stateData) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stateData));
+    } catch (e) { console.error('saveGameState error:', e); }
+  };
+
+  // ゲーム状態をクリア
+  const clearGameState = () => {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (e) { console.error('clearGameState error:', e); }
+  };
+
+  // ページロード時にlocalStorageからゲーム状態を復元
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const state = JSON.parse(saved);
+        console.log('ゲーム状態を復元:', state);
+        if (state.teamNumber) setTeamNumber(state.teamNumber);
+        if (state.teamSize) setTeamSize(state.teamSize);
+        if (state.myPlayerId) setMyPlayerId(state.myPlayerId);
+        if (state.selectedRole !== undefined) setSelectedRole(state.selectedRole);
+        if (state.role) setRole(state.role);
+        if (state.screen === 'game' || state.screen === 'lobby') {
+          setScreen(state.screen);
+        }
+      }
+    } catch (e) { console.error('ゲーム状態復元エラー:', e); }
+  }, []);
+
   const startReflexGame = (diff, puzzType, onComp, onCls) => {
     // 既存のゲームがあれば削除
     const existing = document.getElementById('reflex-game-container');
@@ -464,6 +500,18 @@ const CyberEscapeGame = () => {
             }
             setShowMessage(true);
             setTimerStarted(true);
+
+            // ゲーム状態をlocalStorageに保存
+            const lobbyRole = availableRoles[myEntry.roleIndex];
+            saveGameState({
+              teamNumber: teamNumber,
+              teamSize: currentTeamSize,
+              myPlayerId: myPlayerId,
+              selectedRole: myEntry.roleIndex,
+              role: lobbyRole,
+              screen: 'game'
+            });
+
             setScreen('game');
           }
         }
@@ -550,6 +598,20 @@ const CyberEscapeGame = () => {
       hintsFoundRef.current = hints;
     }
     setTimerStarted(true);
+
+    // ゲーム状態をlocalStorageに保存
+    if (myEntry && myEntry.roleIndex !== undefined) {
+      const savedRole = availableRoles[myEntry.roleIndex];
+      saveGameState({
+        teamNumber: teamNumber,
+        teamSize: maxMembers,
+        myPlayerId: myPlayerId,
+        selectedRole: myEntry.roleIndex,
+        role: savedRole,
+        screen: 'game'
+      });
+    }
+
     setScreen('game');
   };
 
@@ -621,6 +683,7 @@ const CyberEscapeGame = () => {
       clearInterval(lobbyRefreshInterval);
       setLobbyRefreshInterval(null);
     }
+    clearGameState();  // localStorageをクリア
     setScreen('entry');
     setSelectedRole(null);
     setLobbyData(null);
@@ -1134,9 +1197,10 @@ const CyberEscapeGame = () => {
     data.startTime = Date.now();
     await supabase.updateTeam(teamNumber, data);
     
-    setRole(availableRoles[selectedRole]);
-    setAssignedRoles([availableRoles[selectedRole]]);
-    setTimeLeft(getTeamSettings(teamSize).timeLimit);
+    const gameRole = availableRoles[selectedRole];
+    setRole(gameRole);
+    setAssignedRoles([gameRole]);
+    setTimeLeft(getTeamSettings(maxMembers).timeLimit);
     // チームのヒントを読み込み（数値型に統一）
     if (data.hintsFound) {
       const hints = data.hintsFound.map(Number);
@@ -1145,6 +1209,17 @@ const CyberEscapeGame = () => {
     }
     setShowMessage(true);
     setTimerStarted(true);
+
+    // ゲーム状態をlocalStorageに保存
+    saveGameState({
+      teamNumber: teamNumber,
+      teamSize: maxMembers,
+      myPlayerId: myPlayerId,
+      selectedRole: selectedRole,
+      role: gameRole,
+      screen: 'game'
+    });
+
     setScreen('game');
   };
 
@@ -1294,14 +1369,6 @@ const CyberEscapeGame = () => {
     const myPermissions = role ? getHintPermissions(teamSize, role.id) : [];
     const canSeeHint = myPermissions.includes(numHintId);
     
-    // デバッグ: 権限チェックの状態を表示
-    console.log('=== collectHint デバッグ ===');
-    console.log('teamSize:', teamSize);
-    console.log('role:', role?.id);
-    console.log('numHintId:', numHintId);
-    console.log('myPermissions:', myPermissions);
-    console.log('canSeeHint:', canSeeHint);
-
     // Supabaseから最新状態を取得（他プレイヤーの更新を反映）
     let teamHintsFound = [...(hintsFoundRef.current || []).map(Number)];
     let teamHintsUnlocked = [...(hintsUnlockedRef.current || []).map(Number)];
@@ -1511,6 +1578,7 @@ const CyberEscapeGame = () => {
     if (isCorrect) {
       setShowFinalInputModal(false);
       setGameCompleted(true);
+      clearGameState();  // ゲーム完了時にlocalStorageをクリア
       const finalTime = getTeamSettings(teamSize).timeLimit - timeLeft;
       setCompletionTime(finalTime);
 
