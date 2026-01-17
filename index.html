@@ -51,6 +51,12 @@ const CyberEscapeGame = () => {
   const [hintsUnlocked, setHintsUnlocked] = useState([]);  // 反射ゲームクリア済み（まだ開けていない）
   const hintsUnlockedRef = useRef([]);  // 最新の値を参照
   const hintsFoundRef = useRef([]);  // 最新の値を常に参照できるようにRef
+  const teamNumberRef = useRef('');  // teamNumberの最新値
+  const myPlayerIdRef = useRef(null);  // myPlayerIdの最新値
+
+  // teamNumberとmyPlayerIdをrefに同期
+  useEffect(() => { teamNumberRef.current = teamNumber; }, [teamNumber]);
+  useEffect(() => { myPlayerIdRef.current = myPlayerId; }, [myPlayerId]);
   const [puzzlesSolved, setPuzzlesSolved] = useState([]);
   const [nearbyObject, setNearbyObject] = useState(null);
   const [showHintModal, setShowHintModal] = useState(false);
@@ -1380,8 +1386,10 @@ const CyberEscapeGame = () => {
 
     const numHintId = Number(hintId);
     
-    // デバッグ: teamNumberとmyPlayerIdを確認
-    alert('teamNumber=[' + teamNumber + '], myPlayerId=[' + myPlayerId + ']');
+    // refから最新の値を取得（stale closure対策）
+    const currentTeamNumber = teamNumberRef.current;
+    const currentPlayerId = myPlayerIdRef.current;
+    console.log('collectHint: ref values - teamNumber=' + currentTeamNumber + ', playerId=' + currentPlayerId);
     
     // Supabaseから最新状態を取得（React状態ではなくDBから直接取得）
     let teamHintsFound = [...(hintsFoundRef.current || []).map(Number)];
@@ -1389,14 +1397,20 @@ const CyberEscapeGame = () => {
     let dbTeamSize = 5;
     let dbMyRole = null;
     
+    if (!currentTeamNumber) {
+      console.error('collectHint: teamNumberが空です');
+      alert('エラー: チーム情報が見つかりません。ロビーからやり直してください。');
+      return;
+    }
+    
     try {
-      const team = await supabase.getTeam(teamNumber);
+      const team = await supabase.getTeam(currentTeamNumber);
       if (team && team.data) {
         // DBからチームサイズを取得
         dbTeamSize = team.data.maxMembers || team.size || 5;
         
         // DBから自分の役割を取得
-        const myEntry = team.data.members ? team.data.members.find(m => m.oderId === myPlayerId) : null;
+        const myEntry = team.data.members ? team.data.members.find(m => m.oderId === currentPlayerId) : null;
         if (myEntry && myEntry.roleIndex !== undefined) {
           const roles = getRolesForTeamSize(dbTeamSize);
           dbMyRole = roles[myEntry.roleIndex];
