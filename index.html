@@ -1112,6 +1112,7 @@ const CyberEscapeGame = () => {
     const data = team.data;
     
     const maxMembers = data.maxMembers || teamSize;
+    setTeamSize(maxMembers);  // 重要: チームサイズを正しく設定
     const availableRoles = getRolesForTeamSize(maxMembers);
     
     // 未選択者に自動割り当て
@@ -1292,6 +1293,14 @@ const CyberEscapeGame = () => {
     const numHintId = Number(hintId);  // 最初に数値型に統一
     const myPermissions = role ? getHintPermissions(teamSize, role.id) : [];
     const canSeeHint = myPermissions.includes(numHintId);
+    
+    // デバッグ: 権限チェックの状態を表示
+    console.log('=== collectHint デバッグ ===');
+    console.log('teamSize:', teamSize);
+    console.log('role:', role?.id);
+    console.log('numHintId:', numHintId);
+    console.log('myPermissions:', myPermissions);
+    console.log('canSeeHint:', canSeeHint);
 
     // Supabaseから最新状態を取得（他プレイヤーの更新を反映）
     let teamHintsFound = [...(hintsFoundRef.current || []).map(Number)];
