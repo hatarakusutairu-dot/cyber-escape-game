@@ -1380,6 +1380,9 @@ const CyberEscapeGame = () => {
 
     const numHintId = Number(hintId);
     
+    // デバッグ: teamNumberとmyPlayerIdを確認
+    console.log('collectHint開始: teamNumber=' + teamNumber + ', myPlayerId=' + myPlayerId);
+    
     // Supabaseから最新状態を取得（React状態ではなくDBから直接取得）
     let teamHintsFound = [...(hintsFoundRef.current || []).map(Number)];
     let teamHintsUnlocked = [...(hintsUnlockedRef.current || []).map(Number)];
