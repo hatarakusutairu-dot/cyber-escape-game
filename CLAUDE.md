@@ -73,10 +73,35 @@ entry → waiting → lobby → game → complete
 ```sql
 CREATE TABLE teams (
   id SERIAL PRIMARY KEY,
-  number TEXT UNIQUE NOT NULL,
+  code TEXT UNIQUE NOT NULL,    -- チーム番号（4桁）
   name TEXT NOT NULL,
-  data JSONB NOT NULL
+  size INT,                     -- チーム人数
+  data JSONB NOT NULL           -- ゲームデータ（members, hintsFound, hintsUnlocked等）
 );
+```
+
+### Hint System (二段階システム)
+```
+1. 反射ゲームクリア → hintsUnlocked に追加
+2. 権限者が開封 → hintsFound に追加
+3. リーダーが中央コンソールで確認可能
+```
+
+#### チーム人数別ヒント権限
+```javascript
+2人: leader=[0,1], decoder=[2,3,4]     // 両者参加必須
+3人: leader=[0,1], decoder=[2,3], investigator=[4]
+4人: leader=[0], decoder=[1,2], investigator=[3], analyst=[4]
+5人: 各役割1つずつ [0]-[4]
+```
+
+### 重要: Supabase同期の注意点
+`updateMyPosition`が500ms毎に実行され、team.data全体を上書きする。
+hintsUnlocked/hintsFoundが失われないよう、全ての保存処理でマージが必要：
+```javascript
+// ローカルとサーバーのデータをマージ
+data.hintsUnlocked = [...new Set([...localUnlocked, ...serverUnlocked])];
+data.hintsFound = [...new Set([...localFound, ...serverFound])];
 ```
 
 ## Common Tasks

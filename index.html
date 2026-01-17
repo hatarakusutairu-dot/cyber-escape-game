@@ -1159,7 +1159,7 @@ const CyberEscapeGame = () => {
     } catch (e) { console.error('loadTeamHints error:', e); }
   };
 
-  // 自分の位置をサーバーに送信
+  // 自分の位置をサーバーに送信（hintsUnlocked/hintsFoundを保持）
   const updateMyPosition = async () => {
     if (!teamNumber || !myPlayerId) return;
     try {
@@ -1175,6 +1175,15 @@ const CyberEscapeGame = () => {
           rotation: Math.round(player.rotation * 100) / 100,
           lastUpdate: Date.now()
         };
+        // ローカルのhintsUnlocked/hintsFoundをマージして保持
+        const localUnlocked = (hintsUnlockedRef.current || []).map(Number);
+        const serverUnlocked = (data.hintsUnlocked || []).map(Number);
+        data.hintsUnlocked = [...new Set([...localUnlocked, ...serverUnlocked])];
+        
+        const localFound = (hintsFoundRef.current || []).map(Number);
+        const serverFound = (data.hintsFound || []).map(Number);
+        data.hintsFound = [...new Set([...localFound, ...serverFound])];
+        
         await supabase.updateTeam(teamNumber, data);
       }
     } catch (e) { console.error('updateMyPosition error:', e); }
@@ -1362,13 +1371,20 @@ const CyberEscapeGame = () => {
           setHintsFound(newHintsFound);
           hintsFoundRef.current = newHintsFound;
 
-          // Supabaseに非同期で保存（待たない）
+          // Supabaseに非同期で保存（全ヒントデータをマージ）
           (async () => {
             try {
               const team = await supabase.getTeam(teamNumber);
               if (team) {
                 const data = team.data || {};
-                data.hintsFound = [...new Set([...(data.hintsFound || []).map(Number), numHintId])];
+                // hintsFoundをマージ
+                const localFound = (hintsFoundRef.current || []).map(Number);
+                const serverFound = (data.hintsFound || []).map(Number);
+                data.hintsFound = [...new Set([...localFound, ...serverFound, numHintId])];
+                // hintsUnlockedも保持
+                const localUnlocked = (hintsUnlockedRef.current || []).map(Number);
+                const serverUnlocked = (data.hintsUnlocked || []).map(Number);
+                data.hintsUnlocked = [...new Set([...localUnlocked, ...serverUnlocked])];
                 await supabase.updateTeam(teamNumber, data);
               }
             } catch (e) { console.error('saveHintFound error:', e); }
@@ -1409,12 +1425,19 @@ const CyberEscapeGame = () => {
       hintsUnlockedRef.current = newUnlocked;
       setHintsUnlocked(newUnlocked);
 
-      // Supabaseに保存（完了を待つ）
+      // Supabaseに保存（全ヒントデータをマージして保持）
       try {
         const team = await supabase.getTeam(teamNumber);
         if (team) {
           const data = team.data || {};
-          data.hintsUnlocked = [...new Set([...(data.hintsUnlocked || []).map(Number), numId])];
+          // hintsUnlockedをマージ
+          const localUnlocked = (hintsUnlockedRef.current || []).map(Number);
+          const serverUnlocked = (data.hintsUnlocked || []).map(Number);
+          data.hintsUnlocked = [...new Set([...localUnlocked, ...serverUnlocked, numId])];
+          // hintsFoundも保持
+          const localFound = (hintsFoundRef.current || []).map(Number);
+          const serverFound = (data.hintsFound || []).map(Number);
+          data.hintsFound = [...new Set([...localFound, ...serverFound])];
           await supabase.updateTeam(teamNumber, data);
           console.log('hintsUnlocked saved:', data.hintsUnlocked);
         }
