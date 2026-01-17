@@ -452,7 +452,7 @@ const CyberEscapeGame = () => {
       setLobbyData(data);
       
       // 全員揃ったらロビー開始時刻をセット
-      const maxMembers = data.maxMembers || teamSize;
+      const maxMembers = data.maxMembers || team.size || 2;
       const allJoined = data.members && data.members.length >= maxMembers;
       
       if (allJoined && !data.lobbyStartTime) {
@@ -476,7 +476,7 @@ const CyberEscapeGame = () => {
       if (data.gameStarted) {
         const myEntry = data.members.find(function(m) { return m.oderId === myPlayerId; });
         if (myEntry) {
-          const availableRoles = getRolesForTeamSize(data.maxMembers || teamSize);
+          const availableRoles = getRolesForTeamSize(data.maxMembers || team.size || 2);
           // 役割が未割り当ての場合は空いている役割を割り当て
           if (myEntry.roleIndex === undefined) {
             const takenRoles = data.members.filter(function(m) { return m.roleIndex !== undefined && m.oderId !== myPlayerId; }).map(function(m) { return m.roleIndex; });
@@ -491,7 +491,7 @@ const CyberEscapeGame = () => {
             setRole(availableRoles[myEntry.roleIndex]);
             setAssignedRoles([availableRoles[myEntry.roleIndex]]);
             setSelectedRole(myEntry.roleIndex);
-            const currentTeamSize = data.maxMembers || teamSize;
+            const currentTeamSize = data.maxMembers || team.size || 2;
             setTeamSize(currentTeamSize);
             setTimeLeft(getTeamSettings(currentTeamSize).timeLimit);
             // チームのヒントを読み込み（数値型に統一）
