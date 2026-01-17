@@ -1242,8 +1242,8 @@ const CyberEscapeGame = () => {
     // hintId: 0=リーダー, 1=解読員, 2=調査員, 3=分析員, 4=通信員 のモニュメント
     const permissions = {
       2: {
-        leader: [0, 1, 2],    // リーダーは3つ見れる
-        decoder: [3, 4],       // 解読員は2つ見れる
+        leader: [0, 1],        // リーダーは2つ見れる
+        decoder: [2, 3, 4],    // 解読員は3つ見れる（両者参加必須）
       },
       3: {
         leader: [0, 1],        // リーダーは2つ
@@ -1319,7 +1319,7 @@ const CyberEscapeGame = () => {
     // 誰が見れるヒントか表示用
     const getWhoCanSee = (hId) => {
       const perms = {
-        2: { leader: [0,1,2], decoder: [3,4] },
+        2: { leader: [0,1], decoder: [2,3,4] },
         3: { leader: [0,1], decoder: [2,3], investigator: [4] },
         4: { leader: [0], decoder: [1,2], investigator: [3], analyst: [4] },
         5: { leader: [0], decoder: [1], investigator: [2], analyst: [3], communicator: [4] },
@@ -1401,7 +1401,7 @@ const CyberEscapeGame = () => {
     const difficulty = getDifficultyFromTeamSize(teamSize);
     const whoSees = getWhoCanSee(hintId);
 
-    const onComplete = () => {
+    const onComplete = async () => {
       const numId = Number(hintId);
 
       // ローカル状態を即座に更新
@@ -1409,17 +1409,16 @@ const CyberEscapeGame = () => {
       hintsUnlockedRef.current = newUnlocked;
       setHintsUnlocked(newUnlocked);
 
-      // Supabaseに非同期で保存（待たない）
-      (async () => {
-        try {
-          const team = await supabase.getTeam(teamNumber);
-          if (team) {
-            const data = team.data || {};
-            data.hintsUnlocked = [...new Set([...(data.hintsUnlocked || []).map(Number), numId])];
-            await supabase.updateTeam(teamNumber, data);
-          }
-        } catch (e) { console.error('saveHintUnlocked error:', e); }
-      })();
+      // Supabaseに保存（完了を待つ）
+      try {
+        const team = await supabase.getTeam(teamNumber);
+        if (team) {
+          const data = team.data || {};
+          data.hintsUnlocked = [...new Set([...(data.hintsUnlocked || []).map(Number), numId])];
+          await supabase.updateTeam(teamNumber, data);
+          console.log('hintsUnlocked saved:', data.hintsUnlocked);
+        }
+      } catch (e) { console.error('saveHintUnlocked error:', e); }
 
       setCurrentHint({
         title: 'ヒント #' + (hintId + 1) + '（解除成功！）',
