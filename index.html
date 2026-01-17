@@ -1373,6 +1373,14 @@ const CyberEscapeGame = () => {
     const myPermissions = role ? getHintPermissions(teamSize, role.id) : [];
     const canSeeHint = myPermissions.includes(numHintId);
     
+    // デバッグ: 値を確認（問題解決後に削除）
+    alert('デバッグ情報:
+teamSize=' + teamSize + '
+role.id=' + (role ? role.id : 'undefined') + '
+hintId=' + numHintId + '
+myPermissions=[' + myPermissions.join(',') + ']
+canSeeHint=' + canSeeHint);
+    
     // Supabaseから最新状態を取得（他プレイヤーの更新を反映）
     let teamHintsFound = [...(hintsFoundRef.current || []).map(Number)];
     let teamHintsUnlocked = [...(hintsUnlockedRef.current || []).map(Number)];
