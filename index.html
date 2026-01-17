@@ -121,23 +121,25 @@ const CyberEscapeGame = () => {
     } catch (e) { console.error('clearGameState error:', e); }
   };
 
-  // ページロード時にlocalStorageからゲーム状態を復元
+  // ページロード時にlocalStorageからゲーム状態を復元（安全版：screenは復元しない）
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const state = JSON.parse(saved);
-        console.log('ゲーム状態を復元:', state);
-        if (state.teamNumber) setTeamNumber(state.teamNumber);
-        if (state.teamSize) setTeamSize(state.teamSize);
-        if (state.myPlayerId) setMyPlayerId(state.myPlayerId);
-        if (state.selectedRole !== undefined) setSelectedRole(state.selectedRole);
-        if (state.role) setRole(state.role);
-        if (state.screen === 'game' || state.screen === 'lobby') {
-          setScreen(state.screen);
+        // ゲーム中だったら、チーム番号だけ復元してロビーに誘導
+        if (state.teamNumber) {
+          setTeamNumber(state.teamNumber);
+          // 自動的にゲーム画面には行かない（不完全なデータで起動するとエラーになる）
+          // ユーザーはエントリー画面でチーム番号を入力してロビーから再開できる
         }
+        // localStorage をクリア（次回リロード時のループ防止）
+        clearGameState();
       }
-    } catch (e) { console.error('ゲーム状態復元エラー:', e); }
+    } catch (e) { 
+      console.error('ゲーム状態復元エラー:', e);
+      clearGameState();
+    }
   }, []);
 
   const startReflexGame = (diff, puzzType, onComp, onCls) => {
