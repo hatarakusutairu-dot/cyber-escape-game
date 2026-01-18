@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -1565,7 +1565,7 @@ const CyberEscapeGame = () => {
 
           setCurrentHint({
             title: 'ヒント #' + (numHintId + 1) + '（開封完了！）',
-            message: fastGetContent(numHintId).join('\n') + '\n\n✅ リーダーの中央コンソールに追加されました！',
+            message: fastGetContent(numHintId).join('\n'),
             color: info.color
           });
         } else {
@@ -1694,7 +1694,7 @@ const CyberEscapeGame = () => {
 
           setCurrentHint({
             title: 'ヒント #' + (numHintId + 1) + '（開封完了！）',
-            message: getHintContent(numHintId).join('\n') + '\n\n✅ リーダーの中央コンソールに追加されました！',
+            message: getHintContent(numHintId).join('\n'),
             color: info.color
           });
         } else {
