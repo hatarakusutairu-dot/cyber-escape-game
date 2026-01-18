@@ -3580,7 +3580,7 @@ const CyberEscapeGame = () => {
 
   if (screen === 'escaping') {
     return (
-      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center overflow-hidden">
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center overflow-hidden" style={{zIndex: 9999}}>
         {/* 脱出アニメーション */}
         <div className="relative w-full h-2/3 overflow-hidden">
           {/* 研究所の背景 */}
