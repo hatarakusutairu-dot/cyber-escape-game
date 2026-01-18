@@ -2582,6 +2582,14 @@ const CyberEscapeGame = () => {
     }
   }, [showMessage, screen]);
 
+  // 脱出演出画面（3秒後に自動で完了画面へ）
+  useEffect(() => {
+    if (screen === 'escaping') {
+      const timer = setTimeout(() => setScreen('complete'), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [screen]);
+
   // ロビーデータ定期更新
   useEffect(() => {
     if (screen === 'lobby') {
@@ -3569,14 +3577,6 @@ const CyberEscapeGame = () => {
       </div>
     );
   }
-
-  // 脱出演出画面（3秒後に自動で完了画面へ）
-  useEffect(() => {
-    if (screen === 'escaping') {
-      const timer = setTimeout(() => setScreen('complete'), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [screen]);
 
   if (screen === 'escaping') {
     return (
