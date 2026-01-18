@@ -1275,7 +1275,48 @@ const CyberEscapeGame = () => {
 
     // 役割オブジェクトを取得して設定
     const availableRoles = getRolesForTeamSize(rejoinTeamSize);
-    const roleObj = availableRoles[droppedMember.roleIndex];
+    let roleObj = availableRoles[droppedMember.roleIndex];
+
+    // 役割が不明な場合、空いている役割を選択させる
+    if (!roleObj || droppedMember.roleIndex === undefined) {
+      // 他のアクティブメンバーが使用中の役割を取得
+      const activeThreshold = 30000;
+      const takenRoleIndices = teamData.members
+        .filter(m => m.oderId !== droppedMember.oderId && m.position?.lastUpdate && (now - m.position.lastUpdate) < activeThreshold)
+        .map(m => m.roleIndex)
+        .filter(idx => idx !== undefined);
+
+      // 空いている役割を取得
+      const freeRoles = availableRoles
+        .map((r, idx) => ({ role: r, index: idx }))
+        .filter(item => !takenRoleIndices.includes(item.index));
+
+      if (freeRoles.length === 0) {
+        alert('利用可能な役割がありません');
+        return;
+      }
+
+      // 選択肢を作成
+      const roleOptions = freeRoles.map((item, i) => (i + 1) + ': ' + item.role.name).join('\n');
+      const choice = prompt('役割を選択してください（番号を入力）:\n\n' + roleOptions);
+
+      if (!choice) {
+        alert('キャンセルされました');
+        return;
+      }
+
+      const choiceNum = parseInt(choice, 10);
+      if (isNaN(choiceNum) || choiceNum < 1 || choiceNum > freeRoles.length) {
+        alert('無効な選択です');
+        return;
+      }
+
+      const selectedItem = freeRoles[choiceNum - 1];
+      roleObj = selectedItem.role;
+      droppedMember.roleIndex = selectedItem.index;
+      droppedMember.roleName = selectedItem.role.name;
+    }
+
     setRole(roleObj);
     setSelectedRole(droppedMember.roleIndex);
 
