@@ -403,7 +403,37 @@ const updateMyPosition = async () => {
 };
 ```
 
-**関連コード**: 1284-1335行目付近 updateMyPosition関数
+**関連コード**: 1284-1380行目付近 updateMyPosition関数
+
+### 強化版レース条件対策（2026-01-18追加）
+
+**問題**: 同一PC上で複数タブでプレイした場合、リーダーがクリアしても他メンバーが取り残され、ランキングに反映されない
+
+**原因**:
+1. 非リーダーのupdateMyPositionがリーダーの保存前にデータを取得
+2. その後保存すると、リーダーの完了データを上書き
+3. 完了検知しても画面遷移が行われないケースがあった
+
+**修正内容**:
+1. updateMyPositionで**保存直前に最新データを再取得**
+2. 完了データがあれば保存をスキップ
+3. 完了検知時に**画面遷移も実行**（fetchOtherPlayersに任せない）
+4. 最新のfreshTeamデータをベースに位置を更新（古いデータで上書きしない）
+
+```javascript
+// 保存直前に最新状態を取得
+const freshTeam = await supabase.getTeam(teamNumber);
+if (freshTeam.data.completed) {
+  // 完了検知 → 画面遷移まで実行
+  gameCompletedRef.current = true;
+  setScreen('escaping');
+  return; // 保存しない
+}
+// 最新データをベースに位置だけ更新
+const freshData = freshTeam.data;
+// ... 位置更新 ...
+await supabase.updateTeam(teamNumber, freshData);
+```
 
 ## Security Notes
 
