@@ -67,6 +67,7 @@ const CyberEscapeGame = () => {
   const [currentHint, setCurrentHint] = useState(null);
   const [showPuzzleModal, setShowPuzzleModal] = useState(false);
   const [showFinalInputModal, setShowFinalInputModal] = useState(false);  // 最終パズル入力画面
+  const [consoleReflexCleared, setConsoleReflexCleared] = useState(false);  // 中央コンソールの反射ゲームクリア済み
   const [puzzleInput, setPuzzleInput] = useState(['', '', '', '', '']);
   const [puzzleError, setPuzzleError] = useState('');
   const [teamSize, setTeamSize] = useState(5);
@@ -1631,30 +1632,6 @@ const CyberEscapeGame = () => {
     startReflexGame(difficulty, 'hint', onComplete, onClose);
   };
 
-  // 最終パズルを開始（反射ゲーム後にパズル入力画面を表示）
-  const startFinalPuzzle = () => {
-    const requiredHints = getTeamSettings(teamSize).hintsRequired;
-    if (hintsFound.length < requiredHints) {
-      setPuzzleError('まだ全てのヒントを集めていません（' + hintsFound.length + '/' + requiredHints + '）');
-      return;
-    }
-    setShowPuzzleModal(false);
-
-    const onComplete = function() {
-      // 反射ゲームクリア後、パズル入力画面を表示
-      setPuzzleInput(['', '', '', '', '']);
-      setPuzzleError('');
-      setShowFinalInputModal(true);
-    };
-
-    const onClose = function() {
-      var existing = document.getElementById('reflex-game-container');
-      if (existing) existing.remove();
-    };
-
-    startReflexGame(5, 'final', onComplete, onClose);
-  };
-
   // パズル回答をチェック
   const checkPuzzleAnswer = async () => {
     // 正解: ▲ ■ ★ ● ◆（三角、四角、星、丸、ひし形）
@@ -1753,7 +1730,23 @@ const CyberEscapeGame = () => {
           alert('中央コンソールはリーダーのみ操作できます。\nリーダーに操作を依頼してください。');
           return;
         }
-        setShowPuzzleModal(true);
+        // 反射ゲームをクリア済みなら直接最終パズルへ
+        if (consoleReflexCleared) {
+          setPuzzleInput(['', '', '', '', '']);
+          setPuzzleError('');
+          setShowFinalInputModal(true);
+        } else {
+          // 反射ゲームを開始
+          const difficulty = getDifficultyFromTeamSize(teamSizeRef.current || teamSize);
+          const onComplete = function() {
+            setConsoleReflexCleared(true);
+            setPuzzleInput(['', '', '', '', '']);
+            setPuzzleError('');
+            setShowFinalInputModal(true);
+          };
+          const onClose = function() {};
+          startReflexGame(difficulty, 'final', onComplete, onClose);
+        }
       }
     }
   };
@@ -2315,7 +2308,7 @@ const CyberEscapeGame = () => {
       if (e.key === 'Escape') {
         setShowMessage(false);
         setShowHintModal(false);
-        setShowPuzzleModal(false);
+        setShowFinalInputModal(false);
         setShowVoxelPuzzle(false);
       }
     };
@@ -3179,7 +3172,7 @@ const CyberEscapeGame = () => {
         </div>
 
         {/* インタラクションUI */}
-        {nearbyObject && !showHintModal && !showPuzzleModal && (
+        {nearbyObject && !showHintModal && !showFinalInputModal && (
           <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-80 px-6 py-3 rounded border-2 border-cyan-400 animate-pulse">
             <p className="text-cyan-400 text-lg font-bold text-center">
               {nearbyObject.type === 'hint' ? (
@@ -3274,142 +3267,6 @@ const CyberEscapeGame = () => {
                 >
                   閉じる (ESC)
                 </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* パズルモーダル */}
-        {showPuzzleModal && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-80 z-50">
-            <div className="max-w-2xl w-full mx-4">
-              <div className="bg-gray-900 border-2 border-cyan-500 rounded-lg p-6 shadow-2xl">
-                <h2 className="text-2xl font-bold mb-4 text-center text-cyan-400">
-                  🔐 中央コンソール - 最終認証
-                </h2>
-                
-                <div className="bg-gray-800 p-4 rounded mb-4">
-                  <p className="text-gray-300 text-center mb-2">
-                    {role?.id === 'leader'
-                      ? '👑 リーダーはチームが解除した全てのヒントを確認できます'
-                      : '全てのヒントを集めてから最終パズルに挑戦してください'}
-                  </p>
-                  <div className="grid grid-cols-1 gap-2 mb-4">
-                    {(() => {
-                      // チーム人数に応じたヒント情報を生成
-                      const requiredHints = getTeamSettings(teamSize).hintsRequired;
-                      const hintInfoBySize = {
-                        2: [
-                          { name: 'ヒント1', color: '#ffd700' },
-                          { name: 'ヒント2', color: '#ff6b6b' },
-                          { name: 'ヒント3', color: '#4ecdc4' },
-                          { name: 'ヒント4', color: '#95e1d3' },
-                          { name: 'ヒント5', color: '#dda0dd' },
-                        ],
-                        3: [
-                          { name: 'ヒント1', color: '#ffd700' },
-                          { name: 'ヒント2', color: '#ff6b6b' },
-                          { name: 'ヒント3', color: '#4ecdc4' },
-                          { name: 'ヒント4', color: '#95e1d3' },
-                          { name: 'ヒント5', color: '#dda0dd' },
-                        ],
-                        4: [
-                          { name: 'ヒント1', color: '#ffd700' },
-                          { name: 'ヒント2', color: '#ff6b6b' },
-                          { name: 'ヒント3', color: '#4ecdc4' },
-                          { name: 'ヒント4', color: '#95e1d3' },
-                          { name: 'ヒント5', color: '#dda0dd' },
-                        ],
-                        5: [
-                          { name: 'ヒント1', color: '#ffd700' },
-                          { name: 'ヒント2', color: '#ff6b6b' },
-                          { name: 'ヒント3', color: '#4ecdc4' },
-                          { name: 'ヒント4', color: '#95e1d3' },
-                          { name: 'ヒント5', color: '#dda0dd' },
-                        ],
-                      };
-                      const hintInfo = hintInfoBySize[teamSize] || hintInfoBySize[5];
-                      return hintInfo.slice(0, requiredHints);
-                    })().map(function(info, idx) {
-                      const isFound = hintsFound.includes(idx);
-                      const myPerms = role ? getHintPermissions(teamSize, role.id) : [];
-                      const canView = role?.id === 'leader' || myPerms.includes(idx);
-                      const hintContent = (() => {
-                        const contents = {
-                          2: { 0: ['▲は1番目'], 1: ['★は3番目'], 2: ['●は■より後ろ'], 3: ['数列：3, 4, 5, ?, ?', '■は2番目'], 4: ['◆は最後', '?は0と4'] },
-                          3: { 0: ['1番目は3角の形'], 1: ['4角の形は2つある'], 2: ['数列：3, 4, 5, 0, 4'], 3: ['この数列が順番を決める'], 4: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'] },
-                          4: { 0: ['答えは5つの形の列'], 1: ['角の数で順番が決まる'], 2: ['3番目は5角'], 3: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'], 4: ['数列完成：3,4,5,0,4', '4番目は0'] },
-                          5: { 0: ['全員の情報を統合せよ'], 1: ['角の数が順番の法則'], 2: ['青=▲ 緑=■', '黄=★ 赤=● 紫=◆'], 3: ['数列：3,4,5,0,4'], 4: ['4角の形は2つある', '■が先、◆が後'] },
-                        };
-                        return contents[teamSize]?.[idx] || ['ヒントなし'];
-                      })();
-
-                      return (
-                        <div
-                          key={idx}
-                          className={'p-3 rounded border-2 transition-all ' + (
-                            isFound ? 'bg-gray-700' : 'bg-gray-800 opacity-50'
-                          )}
-                          style={{ borderColor: isFound ? info.color : '#4b5563' }}
-                        >
-                          <div className="flex items-center gap-2 mb-1">
-                            <div
-                              className="w-6 h-6 rounded-full flex items-center justify-center text-xs"
-                              style={{ backgroundColor: info.color + '33', color: info.color }}
-                            >
-                              {isFound ? '✓' : '?'}
-                            </div>
-                            <span style={{ color: info.color }} className="font-bold text-sm">{info.name}</span>
-                            {!isFound && <span className="text-gray-500 text-xs ml-auto">未取得</span>}
-                          </div>
-                          {isFound && (
-                            <div className="text-sm mt-2 pl-8">
-                              {canView ? (
-                                <div className="text-white">
-                                  {hintContent.map((line, i) => (
-                                    <p key={i} className="text-cyan-300">{line}</p>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-gray-400 italic">🔒 {info.name}のみ閲覧可</p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <p className="text-cyan-400 text-center text-lg font-bold">
-                    収集済み: {hintsFound.length} / {getTeamSettings(teamSize).hintsRequired}
-                  </p>
-                </div>
-
-                {puzzleError && (
-                  <p className="text-yellow-400 text-center mb-4">{puzzleError}</p>
-                )}
-
-                <div className="flex gap-4">
-                  <button
-                    onClick={() => {
-                      setShowPuzzleModal(false);
-                      setPuzzleError('');
-                    }}
-                    className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded transition"
-                  >
-                    戻る (ESC)
-                  </button>
-                  <button
-                    onClick={startFinalPuzzle}
-                    disabled={hintsFound.length < getTeamSettings(teamSize).hintsRequired}
-                    className={`flex-1 font-bold py-3 rounded transition ${
-                      hintsFound.length >= getTeamSettings(teamSize).hintsRequired
-                        ? 'bg-cyan-600 hover:bg-cyan-500 text-white'
-                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    最終パズルに挑戦
-                  </button>
-                </div>
               </div>
             </div>
           </div>
