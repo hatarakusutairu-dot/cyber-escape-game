@@ -117,6 +117,51 @@ data.hintsFound = [...new Set([...localFound, ...serverFound])];
 python -m http.server 8080
 ```
 
+## Known Issues & Fixes
+
+### teamSizeが5にデフォルトされるバグ（2026-01-18）
+
+**症状**: ヒント権限表示で、3人チームなのに「調査員が開封できる」と表示される（5人チーム扱いになる）
+
+**原因**:
+- `teamSize`と`teamSizeRef`のデフォルト値が5（57行目、73行目）
+- React状態が正しく更新されない場合がある
+- ページリロードやゲーム途中参加時に`setTeamSize`が呼ばれないパスがある
+
+**影響を受ける関数**:
+- `collectHint()` - ヒント権限チェックで間違ったチームサイズを使用
+- `fastGetWhoCanSee()` / `getWhoCanSee()` - 「誰が見れるか」の表示が間違う
+
+**修正方法**:
+`collectHint`関数の最初でDBからチームサイズを取得し、React状態に依存しない：
+```javascript
+// ★ 最初にDBからチームサイズを取得（最も信頼できるソース）
+let dbTeamSize = currentTeamSize;
+try {
+  const teamForSize = await supabase.getTeam(currentTeamNumber);
+  if (teamForSize && teamForSize.data) {
+    dbTeamSize = teamForSize.data.maxMembers || teamForSize.size || currentTeamSize;
+    // React状態も更新
+    if (dbTeamSize !== teamSizeRef.current) {
+      setTeamSize(dbTeamSize);
+      teamSizeRef.current = dbTeamSize;
+    }
+  }
+} catch (e) { console.error('collectHint: teamSize fetch error:', e); }
+```
+
+**デバッグ用ログ**:
+- `collectHint: DB teamSize=X (data.maxMembers=Y, team.size=Z)` - DBから取得した値を確認
+
+**関連するチームサイズ設定箇所**:
+- 57行目: `const teamSizeRef = useRef(5);` - デフォルト値
+- 73行目: `const [teamSize, setTeamSize] = useState(5);` - デフォルト値
+- 510行目: `setTeamSize(data.maxMembers || team.size || 2);` - ロビーからゲーム開始時
+- 618行目: `setTeamSize(maxMembers);` - autoAssignAndStart時
+- 685行目: `setTeamSize(lobbyTeamSize);` - enterLobby時
+- 1176行目: `setTeamSize(teamData.maxMembers || team.size || 5);` - joinTeam時
+- 1208行目: `setTeamSize(maxMembers);` - handleStartGame時
+
 ## Security Notes
 
 - Supabase credentials are exposed in frontend (development only)
