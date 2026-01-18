@@ -503,6 +503,7 @@ const CyberEscapeGame = () => {
             setAssignedRoles([availableRoles[myEntry.roleIndex]]);
             setSelectedRole(myEntry.roleIndex);
             const currentTeamSize = data.maxMembers || team.size || 2;
+            console.log('lobbyGameStarted: data.maxMembers=' + data.maxMembers + ', team.size=' + team.size + ', setting=' + currentTeamSize);
             setTeamSize(currentTeamSize);
             setTimeLeft(getTeamSettings(currentTeamSize).timeLimit);
             // チームのヒントを読み込み（数値型に統一）
@@ -1109,6 +1110,7 @@ const CyberEscapeGame = () => {
       return;
     }
     
+    console.log('createTeam: teamSize state=' + teamSize);
     const teamData = {
       maxMembers: teamSize,
       members: [],
@@ -1168,7 +1170,9 @@ const CyberEscapeGame = () => {
 
     setTeamName(team.name);
     setTeamNumber(normalizedNumber);
-    setTeamSize(teamData.maxMembers || team.size || 5);
+    const joinTeamSize = teamData.maxMembers || team.size || 5;
+    console.log('joinTeam: data.maxMembers=' + teamData.maxMembers + ', team.size=' + team.size + ', setting=' + joinTeamSize);
+    setTeamSize(joinTeamSize);
 
     // プレイヤーIDを生成してメンバーとして追加
     const oderId = 'P' + Date.now();
