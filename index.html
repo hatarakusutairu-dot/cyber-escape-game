@@ -1489,28 +1489,23 @@ const CyberEscapeGame = () => {
       return;
     }
 
-    // ★ ファストパス: ローカル状態を優先（DB待ちをスキップ）
-    const localRole = currentRole;
-    let localTeamSize = currentTeamSize;
-    
-    // teamSizeRefから信頼できる値があればそれを使用
-    if (teamSizeRef.current && teamSizeRef.current !== 5) {
-      localTeamSize = teamSizeRef.current;
-    }
-    
-    // DBからの同期は非同期で行う（画面表示をブロックしない）
-    (async () => {
-      try {
-        const teamForSize = await supabase.getTeam(currentTeamNumber);
-        if (teamForSize && teamForSize.data) {
-          const dbSize = teamForSize.data.maxMembers || teamForSize.size || localTeamSize;
-          if (dbSize !== teamSizeRef.current) {
-            updateTeamSize(dbSize);
-          }
+    // ★ 最初にDBからチームサイズを取得（最も信頼できるソース）
+    let dbTeamSize = currentTeamSize;
+    try {
+      const teamForSize = await supabase.getTeam(currentTeamNumber);
+      if (teamForSize && teamForSize.data) {
+        dbTeamSize = teamForSize.data.maxMembers || teamForSize.size || currentTeamSize;
+        console.log('collectHint: DB teamSize=' + dbTeamSize + ' (data.maxMembers=' + teamForSize.data.maxMembers + ', team.size=' + teamForSize.size + ')');
+        // React状態も更新
+        if (dbTeamSize !== teamSizeRef.current) {
+          updateTeamSize(dbTeamSize);
         }
-      } catch (e) { console.error('collectHint: teamSize sync error:', e); }
-    })();
+      }
+    } catch (e) { console.error('collectHint: teamSize fetch error:', e); }
 
+    // ★ ファストパス: ローカル状態で判定可能なら即座に表示
+    const localRole = currentRole;
+    const localTeamSize = dbTeamSize;  // DBから取得した値を使用
     if (localRole && localTeamSize) {
       const fastPerms = getHintPermissions(localTeamSize, localRole.id);
       const fastCanSee = fastPerms.includes(numHintId);

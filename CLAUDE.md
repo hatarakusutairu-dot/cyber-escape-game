@@ -346,19 +346,6 @@ useEffect(() => {
 
 **ローディングUI**: 正解後すぐに「🎉 正解！脱出準備中...」と表示
 
-### クリスタル反応速度の改善（2026-01-18）
-
-**症状**: クリスタルでEキーを押してからヒント表示までが遅い
-
-**原因**: collectHintがDBからのteamSize取得を待ってからファストパスを実行
-
-**修正内容**:
-- ローカルのteamSizeRef値を先に使用
-- DBからの同期は非同期で実行（画面表示をブロックしない）
-- teamSizeが5（デフォルト）でない場合はローカル値を信頼
-
-**関連コード**: 1492-1513行目付近
-
 ## Security Notes
 
 - Supabase credentials are exposed in frontend (development only)
