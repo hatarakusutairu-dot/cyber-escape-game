@@ -1209,6 +1209,98 @@ const CyberEscapeGame = () => {
     setScreen('lobby');  // 直接ロビーへ
   };
 
+  // 再参加（落ちたメンバーの復帰）
+  const handleRejoinTeam = async () => {
+    if (!teamNumber || teamNumber.length !== 4) {
+      alert('4桁のチーム番号を入力してください');
+      return;
+    }
+
+    const normalizedNumber = teamNumber.replace(/^0+/, '') || '0';
+    const team = await supabase.getTeam(normalizedNumber);
+    if (!team) {
+      alert('チームが見つかりません');
+      return;
+    }
+
+    const teamData = team.data;
+
+    // ゲームが開始されていない場合は通常参加を促す
+    if (!teamData.gameStarted) {
+      alert('このチームはまだゲームを開始していません。\n通常の「チーム参加」を使用してください。');
+      return;
+    }
+
+    // ゲームが完了している場合
+    if (teamData.completed) {
+      alert('このチームはすでにゲームを完了しています。');
+      return;
+    }
+
+    // 落ちたメンバーを探す（30秒以上更新がないメンバー）
+    const now = Date.now();
+    const DROPOUT_THRESHOLD = 30000; // 30秒
+    const droppedMember = teamData.members?.find(m => {
+      if (!m.position || !m.position.lastUpdate) return false;
+      return (now - m.position.lastUpdate) > DROPOUT_THRESHOLD;
+    });
+
+    if (!droppedMember) {
+      alert('現在、復帰可能な空きがありません。\n（30秒以上応答がないメンバーがいる場合に復帰できます）');
+      return;
+    }
+
+    // 落ちたメンバーのスロットを引き継ぐ
+    const newOderId = 'P' + Date.now();
+    const oldOderId = droppedMember.oderId;
+
+    console.log('再参加: ' + oldOderId + ' → ' + newOderId + ' (役割: ' + droppedMember.roleName + ')');
+
+    // メンバー情報を更新
+    droppedMember.oderId = newOderId;
+    droppedMember.position = {
+      x: droppedMember.position?.x || 0,
+      z: droppedMember.position?.z || 0,
+      rotation: droppedMember.position?.rotation || 0,
+      lastUpdate: now
+    };
+    droppedMember.rejoinedAt = now;
+
+    // ローカル状態を設定
+    setMyPlayerId(newOderId);
+    setTeamName(team.name);
+    setTeamNumber(normalizedNumber);
+    const rejoinTeamSize = teamData.maxMembers || team.size || 5;
+    updateTeamSize(rejoinTeamSize);
+    setRole(droppedMember.roleName);
+    setSelectedRole(droppedMember.roleIndex);
+
+    // ヒント情報を復元
+    if (teamData.hintsFound) {
+      setHintsFound(teamData.hintsFound.map(Number));
+      hintsFoundRef.current = teamData.hintsFound.map(Number);
+    }
+    if (teamData.hintsUnlocked) {
+      setHintsUnlocked(teamData.hintsUnlocked.map(Number));
+      hintsUnlockedRef.current = teamData.hintsUnlocked.map(Number);
+    }
+
+    // 開始時間から経過時間を計算
+    if (teamData.startTime) {
+      const elapsed = Math.floor((now - teamData.startTime) / 1000);
+      const settings = getTeamSettings(rejoinTeamSize);
+      const remaining = Math.max(0, settings.timeLimit - elapsed);
+      setTimeLeft(remaining);
+    }
+
+    // DBを更新
+    await supabase.updateTeam(normalizedNumber, teamData);
+
+    // ゲーム画面へ直接遷移
+    alert('チーム「' + team.name + '」に再参加しました！\n役割: ' + droppedMember.roleName);
+    setScreen('game');
+  };
+
   // ゲーム開始（ロビー経由）
   const handleStartGame = async () => {
     if (selectedRole === null) {
@@ -2928,6 +3020,12 @@ const CyberEscapeGame = () => {
               >
                 チーム参加
               </button>
+              <button
+                onClick={() => setJoinMode('rejoin')}
+                className={`flex-1 py-2 rounded transition ${joinMode === 'rejoin' ? 'bg-yellow-600 text-white' : 'bg-gray-700 text-gray-300'}`}
+              >
+                再参加
+              </button>
             </div>
 
             {joinMode === 'create' ? (
@@ -2964,7 +3062,7 @@ const CyberEscapeGame = () => {
                   チーム作成
                 </button>
               </>
-            ) : (
+            ) : joinMode === 'join' ? (
               <>
                 <label className="block text-cyan-300 mb-2">チーム番号（4桁）</label>
                 <input
@@ -2984,6 +3082,34 @@ const CyberEscapeGame = () => {
                   className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded transition"
                 >
                   チーム参加
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="bg-yellow-900 bg-opacity-50 border border-yellow-500 rounded p-3 mb-4">
+                  <p className="text-yellow-300 text-sm">
+                    ゲーム中に切断されたメンバーが復帰するための機能です。
+                    30秒以上応答がないメンバーの枠に入れます。
+                  </p>
+                </div>
+                <label className="block text-yellow-300 mb-2">チーム番号（4桁）</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={teamNumber}
+                  onChange={function(e) { setTeamNumber(e.target.value.replace(/\D/g, '').slice(0, 4)); }}
+                  onKeyDown={function(e) { if (e.key === 'Enter') handleRejoinTeam(); }}
+                  className="w-full px-4 py-3 bg-gray-700 text-white text-center text-3xl tracking-widest font-mono rounded border border-yellow-500 focus:outline-none focus:border-yellow-400 mb-4"
+                  placeholder="1234"
+                  maxLength="4"
+                  autoComplete="off"
+                />
+                <button
+                  onClick={handleRejoinTeam}
+                  className="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 rounded transition"
+                >
+                  再参加
                 </button>
               </>
             )}
