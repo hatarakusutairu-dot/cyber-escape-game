@@ -67,6 +67,7 @@ entry → waiting → lobby → game → complete
 - `createRoleLabel(roleName, color)` - 頭上ラベル生成
 - `updateMyPosition()` - 自分の位置をサーバーに送信
 - `fetchOtherPlayers()` - 他プレイヤーの位置を取得
+- `handleRejoinTeam()` - 切断メンバーの再参加処理
 
 ### Multiplayer Avatar System
 - 他プレイヤーをマイクラ風ボクセルアバターで表示
@@ -434,6 +435,34 @@ const freshData = freshTeam.data;
 // ... 位置更新 ...
 await supabase.updateTeam(teamNumber, freshData);
 ```
+
+### 再参加機能（2026-01-18追加）
+
+**目的**: ゲーム中に切断されたメンバーが復帰できるようにする
+
+**仕組み**:
+1. エントリー画面に「再参加」ボタンを追加
+2. チーム番号を入力
+3. 30秒以上位置更新がないメンバーを「落ちた」と判定
+4. 落ちたメンバーの役割を引き継いでゲームに直接参加
+
+**判定条件**:
+- `position.lastUpdate` が30秒（30000ms）以上前のメンバー
+- ゲームが開始済み（`gameStarted: true`）
+- ゲームが未完了（`completed: false`）
+
+**処理フロー**:
+```javascript
+const DROPOUT_THRESHOLD = 30000; // 30秒
+const droppedMember = teamData.members?.find(m => {
+  if (!m.position || !m.position.lastUpdate) return false;
+  return (now - m.position.lastUpdate) > DROPOUT_THRESHOLD;
+});
+// droppedMemberのoderIdを新しいIDに置き換え
+// 役割（roleIndex, roleName）はそのまま引き継ぐ
+```
+
+**関連コード**: 1211-1305行目付近 handleRejoinTeam関数
 
 ## Security Notes
 
