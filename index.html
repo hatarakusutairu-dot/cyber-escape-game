@@ -1415,6 +1415,14 @@ const CyberEscapeGame = () => {
     const info = hintInfo[hintId] || { name: '不明', color: '#ffffff', roleId: 'unknown' };
 
     const numHintId = Number(hintId);
+
+    // ★ 即座にローディング表示（体感速度向上）
+    setCurrentHint({
+      title: 'ヒント #' + (numHintId + 1),
+      message: '🔄 読み込み中...',
+      color: info.color
+    });
+    setShowHintModal(true);
     
     // 複数のソースから値を取得（優先順位: ref > state > localStorage）
     let currentTeamNumber = teamNumberRef.current || teamNumber;
@@ -1439,16 +1447,114 @@ const CyberEscapeGame = () => {
 
     console.log('collectHint: teamNumber=' + currentTeamNumber + ', roleRef=' + (currentRole ? currentRole.id : 'null') + ', teamSizeRef=' + currentTeamSize);
 
-    // Supabaseからヒント情報を同期
+    // ローカル状態を先に取得
     let teamHintsFound = [...(hintsFoundRef.current || []).map(Number)];
     let teamHintsUnlocked = [...(hintsUnlockedRef.current || []).map(Number)];
 
     if (!currentTeamNumber) {
       console.error('collectHint: teamNumberが空です');
-      alert('エラー: チーム情報が見つかりません。ロビーからやり直してください。');
+      setCurrentHint({
+        title: 'エラー',
+        message: '❌ チーム情報が見つかりません。\nロビーからやり直してください。',
+        color: '#ff6b6b'
+      });
       return;
     }
 
+    // ★ ファストパス: ローカル状態で判定可能なら即座に表示（Supabase呼び出しスキップ）
+    const localRole = currentRole;
+    const localTeamSize = currentTeamSize;
+    if (localRole && localTeamSize) {
+      const fastPerms = getHintPermissions(localTeamSize, localRole.id);
+      const fastCanSee = fastPerms.includes(numHintId);
+
+      // ヒント内容取得（ファストパス用）
+      const fastGetContent = (hId) => {
+        const contents = {
+          2: { 0: ['▲は1番目'], 1: ['★は3番目'], 2: ['●は■より後ろ'], 3: ['数列：3, 4, 5, ?, ?', '■は2番目'], 4: ['◆は最後', '?は0と4'] },
+          3: { 0: ['1番目は3角の形'], 1: ['4角の形は2つある'], 2: ['数列：3, 4, 5, 0, 4'], 3: ['この数列が順番を決める'], 4: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'] },
+          4: { 0: ['答えは5つの形の列'], 1: ['角の数で順番が決まる'], 2: ['3番目は5角'], 3: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'], 4: ['数列完成：3,4,5,0,4', '4番目は0'] },
+          5: { 0: ['全員の情報を統合せよ'], 1: ['角の数が順番の法則'], 2: ['青=▲ 緑=■', '黄=★ 赤=● 紫=◆'], 3: ['数列：3,4,5,0,4'], 4: ['4角の形は2つある', '■が先、◆が後'] },
+        };
+        return contents[localTeamSize]?.[hId] || ['ヒントなし'];
+      };
+
+      const fastGetWhoCanSee = (hId) => {
+        const perms = {
+          2: { leader: [0,1], decoder: [2,3,4] },
+          3: { leader: [0,1], decoder: [2,3], investigator: [4] },
+          4: { leader: [0], decoder: [1,2], investigator: [3], analyst: [4] },
+          5: { leader: [0], decoder: [1], investigator: [2], analyst: [3], communicator: [4] },
+        };
+        const names = { leader: 'リーダー', decoder: '解読員', investigator: '調査員', analyst: '分析員', communicator: '通信員' };
+        const sizePerms = perms[localTeamSize] || {};
+        const whoList = [];
+        for (const r in sizePerms) {
+          if (sizePerms[r].includes(hId)) whoList.push(names[r]);
+        }
+        return whoList.join('、') || '不明';
+      };
+
+      // 既に開封済み（ファストパス）
+      if (teamHintsFound.includes(numHintId)) {
+        if (fastCanSee) {
+          setCurrentHint({
+            title: 'ヒント #' + (numHintId + 1) + '（開封済み）',
+            message: fastGetContent(numHintId).join('\n'),
+            color: info.color
+          });
+        } else {
+          setCurrentHint({
+            title: 'ヒント #' + (numHintId + 1) + '（開封済み）',
+            message: '🔒 このヒントは「' + fastGetWhoCanSee(numHintId) + '」が見れます。\n\nチームメンバーに内容を確認してもらいましょう！',
+            color: '#666666'
+          });
+        }
+        return;  // ファストパス終了
+      }
+
+      // 反射ゲームクリア済み（ファストパス）
+      if (teamHintsUnlocked.includes(numHintId)) {
+        if (fastCanSee) {
+          // 即座に開封
+          const newHintsFound = [...new Set([...teamHintsFound, numHintId])];
+          setHintsFound(newHintsFound);
+          hintsFoundRef.current = newHintsFound;
+
+          // 非同期でSupabase保存
+          (async () => {
+            try {
+              const team = await supabase.getTeam(currentTeamNumber);
+              if (team) {
+                const data = team.data || {};
+                const localFound = (hintsFoundRef.current || []).map(Number);
+                const serverFound = (data.hintsFound || []).map(Number);
+                data.hintsFound = [...new Set([...localFound, ...serverFound, numHintId])];
+                const localUnlocked = (hintsUnlockedRef.current || []).map(Number);
+                const serverUnlocked = (data.hintsUnlocked || []).map(Number);
+                data.hintsUnlocked = [...new Set([...localUnlocked, ...serverUnlocked])];
+                await supabase.updateTeam(currentTeamNumber, data);
+              }
+            } catch (e) { console.error('saveHintFound error:', e); }
+          })();
+
+          setCurrentHint({
+            title: 'ヒント #' + (numHintId + 1) + '（開封完了！）',
+            message: fastGetContent(numHintId).join('\n') + '\n\n✅ リーダーの中央コンソールに追加されました！',
+            color: info.color
+          });
+        } else {
+          setCurrentHint({
+            title: 'ヒント #' + (numHintId + 1) + '（解除済み）',
+            message: '🔓 反射ゲームはクリア済みです！\n\n📢 「' + fastGetWhoCanSee(numHintId) + '」がこのオブジェクトでEキーを押すと開封できます。\n\nチームメンバーに開封を依頼しましょう！',
+            color: '#ffaa00'
+          });
+        }
+        return;  // ファストパス終了
+      }
+    }
+
+    // ★ 通常パス: Supabaseから同期（新規ヒントの反射ゲーム開始時など）
     try {
       const team = await supabase.getTeam(currentTeamNumber);
       if (team && team.data) {
@@ -1598,29 +1704,56 @@ const CyberEscapeGame = () => {
       hintsUnlockedRef.current = newUnlocked;
       setHintsUnlocked(newUnlocked);
 
-      // Supabaseに保存（全ヒントデータをマージして保持）
-      try {
-        const team = await supabase.getTeam(teamNumber);
-        if (team) {
-          const data = team.data || {};
-          // hintsUnlockedをマージ
-          const localUnlocked = (hintsUnlockedRef.current || []).map(Number);
-          const serverUnlocked = (data.hintsUnlocked || []).map(Number);
-          data.hintsUnlocked = [...new Set([...localUnlocked, ...serverUnlocked, numId])];
-          // hintsFoundも保持
-          const localFound = (hintsFoundRef.current || []).map(Number);
-          const serverFound = (data.hintsFound || []).map(Number);
-          data.hintsFound = [...new Set([...localFound, ...serverFound])];
-          await supabase.updateTeam(teamNumber, data);
-          console.log('hintsUnlocked saved:', data.hintsUnlocked);
-        }
-      } catch (e) { console.error('saveHintUnlocked error:', e); }
+      // 権限がある人なら直接ヒントを開封
+      if (canSeeHint) {
+        // hintsFoundに追加
+        const newHintsFound = [...new Set([...(hintsFoundRef.current || []).map(Number), numId])];
+        setHintsFound(newHintsFound);
+        hintsFoundRef.current = newHintsFound;
 
-      setCurrentHint({
-        title: 'ヒント #' + (numHintId + 1) + '（解除成功！）',
-        message: '🔓 反射ゲームクリア！\n\n📢 次は「' + whoSees + '」がこのオブジェクトでEキーを押すとヒントを開封できます。\n\n' + (canSeeHint ? '👉 あなたが開封できます！もう一度Eキーを押してください。' : '権限のあるチームメンバーに開封を依頼しましょう！'),
-        color: '#00ff88'
-      });
+        // Supabaseに保存（hintsFound + hintsUnlocked両方）
+        try {
+          const team = await supabase.getTeam(teamNumber);
+          if (team) {
+            const data = team.data || {};
+            const localUnlocked = (hintsUnlockedRef.current || []).map(Number);
+            const serverUnlocked = (data.hintsUnlocked || []).map(Number);
+            data.hintsUnlocked = [...new Set([...localUnlocked, ...serverUnlocked, numId])];
+            const localFound = (hintsFoundRef.current || []).map(Number);
+            const serverFound = (data.hintsFound || []).map(Number);
+            data.hintsFound = [...new Set([...localFound, ...serverFound, numId])];
+            await supabase.updateTeam(teamNumber, data);
+          }
+        } catch (e) { console.error('saveHint error:', e); }
+
+        // 直接ヒント内容を表示
+        setCurrentHint({
+          title: 'ヒント #' + (numHintId + 1) + '（解除成功！）',
+          message: '🔓 反射ゲームクリア！\n\n' + getHintContent(numHintId).join('\n'),
+          color: info.color
+        });
+      } else {
+        // 権限がない人は解除のみ
+        try {
+          const team = await supabase.getTeam(teamNumber);
+          if (team) {
+            const data = team.data || {};
+            const localUnlocked = (hintsUnlockedRef.current || []).map(Number);
+            const serverUnlocked = (data.hintsUnlocked || []).map(Number);
+            data.hintsUnlocked = [...new Set([...localUnlocked, ...serverUnlocked, numId])];
+            const localFound = (hintsFoundRef.current || []).map(Number);
+            const serverFound = (data.hintsFound || []).map(Number);
+            data.hintsFound = [...new Set([...localFound, ...serverFound])];
+            await supabase.updateTeam(teamNumber, data);
+          }
+        } catch (e) { console.error('saveHintUnlocked error:', e); }
+
+        setCurrentHint({
+          title: 'ヒント #' + (numHintId + 1) + '（解除成功！）',
+          message: '🔓 反射ゲームクリア！\n\n📢 「' + whoSees + '」がこのオブジェクトでEキーを押すとヒントを開封できます。\n\n権限のあるチームメンバーに開封を依頼しましょう！',
+          color: '#00ff88'
+        });
+      }
       setShowHintModal(true);
     };
 
@@ -1629,6 +1762,8 @@ const CyberEscapeGame = () => {
       if (existing) existing.remove();
     };
 
+    // 反射ゲーム開始前にローディングモーダルを閉じる
+    setShowHintModal(false);
     startReflexGame(difficulty, 'hint', onComplete, onClose);
   };
 
