@@ -1714,9 +1714,7 @@ const CyberEscapeGame = () => {
 
   // インタラクション処理用のRef（クロージャ問題を回避）
   const nearbyObjectRef = useRef(null);
-  const roleRef = useRef(null);
   useEffect(() => { nearbyObjectRef.current = nearbyObject; }, [nearbyObject]);
-  useEffect(() => { roleRef.current = role; }, [role]);
 
   // インタラクション処理（ボタンとキーの両方から呼び出し可能）
   const handleInteraction = () => {
