@@ -153,14 +153,28 @@ try {
 **デバッグ用ログ**:
 - `collectHint: DB teamSize=X (data.maxMembers=Y, team.size=Z)` - DBから取得した値を確認
 
-**関連するチームサイズ設定箇所**:
-- 57行目: `const teamSizeRef = useRef(5);` - デフォルト値
-- 73行目: `const [teamSize, setTeamSize] = useState(5);` - デフォルト値
-- 510行目: `setTeamSize(data.maxMembers || team.size || 2);` - ロビーからゲーム開始時
-- 618行目: `setTeamSize(maxMembers);` - autoAssignAndStart時
-- 685行目: `setTeamSize(lobbyTeamSize);` - enterLobby時
-- 1176行目: `setTeamSize(teamData.maxMembers || team.size || 5);` - joinTeam時
-- 1208行目: `setTeamSize(maxMembers);` - handleStartGame時
+**根本修正**: `updateTeamSize`ヘルパー関数を追加
+```javascript
+// teamSizeを更新する際は必ずこの関数を使用（refも同時に更新）
+const updateTeamSize = (newSize) => {
+  console.log('updateTeamSize: ' + newSize);
+  setTeamSize(newSize);
+  teamSizeRef.current = newSize;
+};
+```
+
+**重要**: `setTeamSize`を直接呼ばず、必ず`updateTeamSize`を使用すること。
+これにより、React状態とrefが同時に更新され、タイミング問題を防ぐ。
+
+**関連するチームサイズ設定箇所**（全て`updateTeamSize`に変更済み）:
+- 60行目: `updateTeamSize` - ヘルパー関数定義
+- 514行目: `updateTeamSize(currentTeamSize);` - ロビーからゲーム開始時
+- 621行目: `updateTeamSize(maxMembers);` - autoAssignAndStart時
+- 688行目: `updateTeamSize(lobbyTeamSize);` - enterLobby時
+- 1182行目: `updateTeamSize(joinTeamSize);` - joinTeam時
+- 1214行目: `updateTeamSize(maxMembers);` - handleStartGame時
+- 1484行目: `updateTeamSize(dbTeamSize);` - collectHint DB取得時
+- 2812行目: `onClick={() => updateTeamSize(num)}` - UI選択時
 
 ## Security Notes
 

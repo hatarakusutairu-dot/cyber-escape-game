@@ -55,6 +55,13 @@ const CyberEscapeGame = () => {
   const myPlayerIdRef = useRef(null);  // myPlayerIdの最新値
   const roleRef = useRef(null);  // 自分の役割（role）の最新値
   const teamSizeRef = useRef(5);  // チームサイズの最新値
+  
+  // teamSizeを更新する際は必ずこの関数を使用（refも同時に更新）
+  const updateTeamSize = (newSize) => {
+    console.log('updateTeamSize: ' + newSize);
+    setTeamSize(newSize);
+    teamSizeRef.current = newSize;
+  };
 
   // 状態をrefに同期
   useEffect(() => { teamNumberRef.current = teamNumber; }, [teamNumber]);
@@ -504,7 +511,7 @@ const CyberEscapeGame = () => {
             setSelectedRole(myEntry.roleIndex);
             const currentTeamSize = data.maxMembers || team.size || 2;
             console.log('lobbyGameStarted: data.maxMembers=' + data.maxMembers + ', team.size=' + team.size + ', setting=' + currentTeamSize);
-            setTeamSize(currentTeamSize);
+            updateTeamSize(currentTeamSize);
             setTimeLeft(getTeamSettings(currentTeamSize).timeLimit);
             // チームのヒントを読み込み（数値型に統一）
             if (data.hintsFound) {
@@ -611,7 +618,7 @@ const CyberEscapeGame = () => {
     setAssignedRoles([myRole]);
     setSelectedRole(myEntry.roleIndex);
     
-    setTeamSize(maxMembers);
+    updateTeamSize(maxMembers);
     setTimeLeft(getTeamSettings(maxMembers).timeLimit);
     // チームのヒントを読み込み（数値型に統一）
     if (latestData.hintsFound) {
@@ -678,7 +685,7 @@ const CyberEscapeGame = () => {
     // 重要: チームサイズを正しく設定（data.maxMembers または team.size から）
     const lobbyTeamSize = data.maxMembers || team.size || 5;
     console.log('enterLobby: data.maxMembers=' + data.maxMembers + ', team.size=' + team.size + ', setting teamSize=' + lobbyTeamSize);
-    setTeamSize(lobbyTeamSize);
+    updateTeamSize(lobbyTeamSize);
     setRoleSelectTimer(45);
     setScreen('lobby');
   };
@@ -1172,7 +1179,7 @@ const CyberEscapeGame = () => {
     setTeamNumber(normalizedNumber);
     const joinTeamSize = teamData.maxMembers || team.size || 5;
     console.log('joinTeam: data.maxMembers=' + teamData.maxMembers + ', team.size=' + team.size + ', setting=' + joinTeamSize);
-    setTeamSize(joinTeamSize);
+    updateTeamSize(joinTeamSize);
 
     // プレイヤーIDを生成してメンバーとして追加
     const oderId = 'P' + Date.now();
@@ -1204,7 +1211,7 @@ const CyberEscapeGame = () => {
     const data = team.data;
     
     const maxMembers = data.maxMembers || teamSize;
-    setTeamSize(maxMembers);  // 重要: チームサイズを正しく設定
+    updateTeamSize(maxMembers);  // 重要: チームサイズを正しく設定
     const availableRoles = getRolesForTeamSize(maxMembers);
     
     // 未選択者に自動割り当て
@@ -1474,8 +1481,7 @@ const CyberEscapeGame = () => {
         console.log('collectHint: DB teamSize=' + dbTeamSize + ' (data.maxMembers=' + teamForSize.data.maxMembers + ', team.size=' + teamForSize.size + ')');
         // React状態も更新
         if (dbTeamSize !== teamSizeRef.current) {
-          setTeamSize(dbTeamSize);
-          teamSizeRef.current = dbTeamSize;
+          updateTeamSize(dbTeamSize);
         }
       }
     } catch (e) { console.error('collectHint: teamSize fetch error:', e); }
@@ -2803,7 +2809,7 @@ const CyberEscapeGame = () => {
                   {[2, 3, 4, 5].map(num => (
                     <button
                       key={num}
-                      onClick={() => setTeamSize(num)}
+                      onClick={() => updateTeamSize(num)}
                       className={`py-3 rounded-lg text-xl font-bold transition ${
                         teamSize === num 
                           ? 'bg-cyan-600 text-white ring-2 ring-cyan-400' 
