@@ -1297,6 +1297,30 @@ const CyberEscapeGame = () => {
       if (!team) return;
       const data = team.data;
 
+      // ゲーム完了状態をチェック（リーダー以外のメンバー用）
+      if (data.completed && !gameCompleted && screen === 'game') {
+        setGameCompleted(true);
+        setCompletionTime(data.completionTime || 0);
+        clearGameState();
+        // ランキングを取得
+        try {
+          const allTeams = await supabase.getAllTeams();
+          const completedTeams = allTeams
+            .filter(t => t.data && t.data.completed)
+            .map(t => ({
+              name: t.name,
+              code: t.code,
+              time: t.data.completionTime,
+              size: t.data.maxMembers || t.size || 5
+            }))
+            .sort((a, b) => a.time - b.time);
+          setRankings(completedTeams);
+        } catch (e) { console.error('fetchRankings error:', e); }
+        setShowEscapeAnimation(true);
+        setScreen('escaping');
+        return;
+      }
+
       // チームのhintsFoundを同期（数値型に統一）
       if (data.hintsFound && data.hintsFound.length > 0) {
         const supabaseHints = data.hintsFound.map(Number);
