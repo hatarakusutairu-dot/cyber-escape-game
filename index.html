@@ -1500,7 +1500,7 @@ const CyberEscapeGame = () => {
     // ===== ステージ2: 反射ゲームクリア済み =====
     if (teamHintsUnlocked.includes(numHintId)) {
       if (canSeeHint) {
-        const confirmed = window.confirm('このヒントを開封しますか？\n開封するとリーダーの中央コンソールに表示されます。');
+        const confirmed = true; // 確認なしで直接開封
         if (confirmed) {
           // ローカル状態を即座に更新
           const newHintsFound = [...new Set([...teamHintsFound, numHintId])];
