@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>サイバー研究所 脱出ゲーム</title>
+  <title>サイバー研究所 脱出ゲーム v2</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -53,10 +53,14 @@ const CyberEscapeGame = () => {
   const hintsFoundRef = useRef([]);  // 最新の値を常に参照できるようにRef
   const teamNumberRef = useRef('');  // teamNumberの最新値
   const myPlayerIdRef = useRef(null);  // myPlayerIdの最新値
+  const roleRef = useRef(null);  // 自分の役割（role）の最新値
+  const teamSizeRef = useRef(5);  // チームサイズの最新値
 
-  // teamNumberとmyPlayerIdをrefに同期
+  // 状態をrefに同期
   useEffect(() => { teamNumberRef.current = teamNumber; }, [teamNumber]);
   useEffect(() => { myPlayerIdRef.current = myPlayerId; }, [myPlayerId]);
+  useEffect(() => { roleRef.current = role; }, [role]);
+  useEffect(() => { teamSizeRef.current = teamSize; }, [teamSize]);
   const [puzzlesSolved, setPuzzlesSolved] = useState([]);
   const [nearbyObject, setNearbyObject] = useState(null);
   const [showHintModal, setShowHintModal] = useState(false);
@@ -1402,31 +1406,38 @@ const CyberEscapeGame = () => {
       } catch (e) {}
     }
     
-    console.log('collectHint: teamNumber=' + currentTeamNumber + ', playerId=' + currentPlayerId);
-    
-    // Supabaseから最新状態を取得（React状態ではなくDBから直接取得）
+    // ★ 優先順位: ref > state > localStorage > DB
+    // RefからroleとteamSizeを取得（これが最も信頼できる）
+    let currentRole = roleRef.current || role;
+    let currentTeamSize = teamSizeRef.current || teamSize;
+
+    console.log('collectHint: teamNumber=' + currentTeamNumber + ', roleRef=' + (currentRole ? currentRole.id : 'null') + ', teamSizeRef=' + currentTeamSize);
+
+    // Supabaseからヒント情報を同期
     let teamHintsFound = [...(hintsFoundRef.current || []).map(Number)];
     let teamHintsUnlocked = [...(hintsUnlockedRef.current || []).map(Number)];
-    let dbTeamSize = 5;
-    let dbMyRole = null;
-    
+
     if (!currentTeamNumber) {
       console.error('collectHint: teamNumberが空です');
       alert('エラー: チーム情報が見つかりません。ロビーからやり直してください。');
       return;
     }
-    
+
     try {
       const team = await supabase.getTeam(currentTeamNumber);
       if (team && team.data) {
-        // DBからチームサイズを取得
-        dbTeamSize = team.data.maxMembers || team.size || 5;
-        
-        // DBから自分の役割を取得
-        const myEntry = team.data.members ? team.data.members.find(m => m.oderId === currentPlayerId) : null;
-        if (myEntry && myEntry.roleIndex !== undefined) {
-          const roles = getRolesForTeamSize(dbTeamSize);
-          dbMyRole = roles[myEntry.roleIndex];
+        // DBからチームサイズを取得（roleRefがない場合のフォールバック用）
+        if (!currentTeamSize || currentTeamSize === 5) {
+          currentTeamSize = team.data.maxMembers || team.size || 2;
+        }
+        // roleRefがない場合のみDBから取得（フォールバック）
+        if (!currentRole && team.data.members) {
+          const myEntry = team.data.members.find(m => String(m.oderId) === String(currentPlayerId));
+          if (myEntry && myEntry.roleIndex !== undefined) {
+            const roles = getRolesForTeamSize(currentTeamSize);
+            currentRole = roles[myEntry.roleIndex];
+            console.log('collectHint: DBフォールバック roleIndex=' + myEntry.roleIndex);
+          }
         }
         if (team.data.hintsFound) {
           const sf = team.data.hintsFound.map(Number);
@@ -1442,12 +1453,12 @@ const CyberEscapeGame = () => {
         }
       }
     } catch (e) { console.error('syncHints error:', e); }
-    
-    // DBから取得した値で権限チェック
-    const myPermissions = dbMyRole ? getHintPermissions(dbTeamSize, dbMyRole.id) : [];
+
+    // roleRefから取得した値で権限チェック（DBではなくReact状態を信頼）
+    const myPermissions = currentRole ? getHintPermissions(currentTeamSize, currentRole.id) : [];
     const canSeeHint = myPermissions.includes(numHintId);
-    
-    console.log('collectHint: dbTeamSize=' + dbTeamSize + ', dbMyRole=' + (dbMyRole ? dbMyRole.id : 'null') + ', hintId=' + numHintId + ', perms=' + JSON.stringify(myPermissions));
+
+    console.log('collectHint: teamSize=' + currentTeamSize + ', role=' + (currentRole ? currentRole.id : 'null') + ', hintId=' + numHintId + ', perms=' + JSON.stringify(myPermissions));
 
     // ヒントの内容を取得
     const getHintContent = (hId) => {
@@ -1457,7 +1468,7 @@ const CyberEscapeGame = () => {
         4: { 0: ['答えは5つの形の列'], 1: ['角の数で順番が決まる'], 2: ['3番目は5角'], 3: ['青=▲ 緑=■ 黄=★', '赤=● 紫=◆'], 4: ['数列完成：3,4,5,0,4', '4番目は0'] },
         5: { 0: ['全員の情報を統合せよ'], 1: ['角の数が順番の法則'], 2: ['青=▲ 緑=■', '黄=★ 赤=● 紫=◆'], 3: ['数列：3,4,5,0,4'], 4: ['4角の形は2つある', '■が先、◆が後'] },
       };
-      return contents[dbTeamSize]?.[hId] || ['ヒントなし'];
+      return contents[currentTeamSize]?.[hId] || ['ヒントなし'];
     };
 
     // 誰が見れるヒントか表示用
@@ -1470,7 +1481,7 @@ const CyberEscapeGame = () => {
         5: { leader: [0], decoder: [1], investigator: [2], analyst: [3], communicator: [4] },
       };
       const names = { leader: 'リーダー', decoder: '解読員', investigator: '調査員', analyst: '分析員', communicator: '通信員' };
-      const sizePerms = perms[dbTeamSize] || {};
+      const sizePerms = perms[currentTeamSize] || {};
       const whoList = [];
       for (const r in sizePerms) {
         if (sizePerms[r].includes(numId)) whoList.push(names[r]);
