@@ -3630,7 +3630,7 @@ const CyberEscapeGame = () => {
     const myRank = rankings.findIndex(t => t.code === teamNumber) + 1;
 
     return (
-      <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center p-4 overflow-auto">
+      <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center p-4 overflow-auto" style={{zIndex: 9999}}>
         <div className="bg-gray-800 bg-opacity-95 p-8 rounded-2xl shadow-2xl max-w-2xl w-full border-2 border-cyan-500">
           {gameCompleted ? (
             <>
