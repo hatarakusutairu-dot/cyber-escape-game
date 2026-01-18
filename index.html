@@ -1310,11 +1310,24 @@ const CyberEscapeGame = () => {
         const localUnlocked = (hintsUnlockedRef.current || []).map(Number);
         const serverUnlocked = (data.hintsUnlocked || []).map(Number);
         data.hintsUnlocked = [...new Set([...localUnlocked, ...serverUnlocked])];
-        
+
         const localFound = (hintsFoundRef.current || []).map(Number);
         const serverFound = (data.hintsFound || []).map(Number);
         data.hintsFound = [...new Set([...localFound, ...serverFound])];
-        
+
+        // ★ 保存直前に完了状態を再確認（レース条件対策）
+        // リーダーが完了保存した直後に非リーダーが上書きするのを防ぐ
+        const freshTeam = await supabase.getTeam(teamNumber);
+        if (freshTeam && freshTeam.data && freshTeam.data.completed) {
+          console.log('updateMyPosition: 保存直前に完了検知、保存スキップ');
+          // 完了状態を検知したので、自分も完了状態に遷移
+          if (!gameCompletedRef.current) {
+            gameCompletedRef.current = true;
+            isEscapingRef.current = true;
+          }
+          return;  // 位置更新をスキップして完了データを保護
+        }
+
         await supabase.updateTeam(teamNumber, data);
       }
     } catch (e) { console.error('updateMyPosition error:', e); }
