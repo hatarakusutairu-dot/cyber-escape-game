@@ -183,6 +183,30 @@ const updateTeamSize = (newSize) => {
 - 1484行目: `updateTeamSize(dbTeamSize);` - collectHint DB取得時
 - 2812行目: `onClick={() => updateTeamSize(num)}` - UI選択時
 
+### 脱出成功画面がリーダーのみ表示されるバグ（2026-01-18）
+
+**症状**: 
+- リーダーのみ脱出成功画面が表示される
+- 他のメンバーはゲーム画面に残される
+- 脱出アニメーションが再生されない
+- 画面に3Dグラフィックスが重なる
+
+**原因**:
+- `checkPuzzleAnswer`と`fetchOtherPlayers`が`setScreen('complete')`を直接呼び、`escaping`画面をスキップ
+- ゲーム画面のz-indexが設定されておらず、画面が重なる
+- `fetchOtherPlayers`の間隔が1000msで遅い
+
+**修正内容**:
+1. `setScreen('complete')` → `setScreen('escaping')` に変更（両箇所）
+2. ゲーム画面に`style={{zIndex: 1}}`を追加
+3. `fetchOtherPlayers`の間隔を1000ms → 500msに短縮
+
+**関連コード**:
+- 1842行目: `setScreen('escaping');` - checkPuzzleAnswer（リーダー用）
+- 1333行目: `setScreen('escaping');` - fetchOtherPlayers（メンバー用）
+- 3302行目: ゲーム画面のz-index設定
+- 2762行目: fetchOtherPlayersのポーリング間隔
+
 ## Security Notes
 
 - Supabase credentials are exposed in frontend (development only)
