@@ -68,6 +68,8 @@ const CyberEscapeGame = () => {
   useEffect(() => { myPlayerIdRef.current = myPlayerId; }, [myPlayerId]);
   useEffect(() => { roleRef.current = role; }, [role]);
   useEffect(() => { teamSizeRef.current = teamSize; }, [teamSize]);
+  useEffect(() => { gameCompletedRef.current = gameCompleted; }, [gameCompleted]);
+  useEffect(() => { screenRef.current = screen; }, [screen]);
   const [puzzlesSolved, setPuzzlesSolved] = useState([]);
   const [nearbyObject, setNearbyObject] = useState(null);
   const [showHintModal, setShowHintModal] = useState(false);
@@ -121,6 +123,10 @@ const CyberEscapeGame = () => {
   // ボクセルパズルコンポーネント
   // 反射神経ゲームをDOM直接操作で実装（Reactの再レンダリングから完全に独立）
   const reflexGameContainerRef = useRef(null);
+
+  // stale closure対策用ref（interval内で最新の状態を参照するため）
+  const gameCompletedRef = useRef(false);
+  const screenRef = useRef("entry");
 
   // ===== localStorage でゲーム状態を保持（ページリフレッシュ対応）=====
   const STORAGE_KEY = 'cyberEscapeGameState';
@@ -1303,6 +1309,8 @@ const CyberEscapeGame = () => {
 
   // 他プレイヤーの位置とヒント情報を取得
   const fetchOtherPlayers = async () => {
+    // stale closure対策: refで現在の画面とゲーム完了状態を確認
+    if (screenRef.current !== "game") return;
     if (!teamNumber || !myPlayerId) return;
     try {
       const team = await supabase.getTeam(teamNumber);
@@ -1310,8 +1318,10 @@ const CyberEscapeGame = () => {
       const data = team.data;
 
       // ゲーム完了状態をチェック（リーダー以外のメンバー用）
-      if (data.completed && !gameCompleted) {
+      if (data.completed && !gameCompletedRef.current) {
         console.log('ゲーム完了を検知！ 完了画面へ遷移します');
+        // refを即座に更新（次のinterval tickでの重複実行を防止）
+        gameCompletedRef.current = true;
         setGameCompleted(true);
         setCompletionTime(data.completionTime || 0);
         clearGameState();
@@ -1330,6 +1340,7 @@ const CyberEscapeGame = () => {
           setRankings(completedTeams);
         } catch (e) { console.error('fetchRankings error:', e); }
         // 脱出アニメーション画面へ遷移（全員に表示）
+        screenRef.current = 'escaping';
         setScreen('escaping');
         return;
       }
@@ -1807,6 +1818,8 @@ const CyberEscapeGame = () => {
 
     if (isCorrect) {
       setShowFinalInputModal(false);
+      // refを即座に更新（重複実行防止）
+      gameCompletedRef.current = true;
       setGameCompleted(true);
       clearGameState();  // ゲーム完了時にlocalStorageをクリア
       const finalTime = getTeamSettings(teamSize).timeLimit - timeLeft;
@@ -1839,6 +1852,7 @@ const CyberEscapeGame = () => {
       } catch (e) { console.error('fetchRankings error:', e); }
 
       // 脱出アニメーション画面へ遷移
+      screenRef.current = 'escaping';
       setScreen('escaping');
     } else {
       setPuzzleError('不正解です。ヒントを確認して再度入力してください。');

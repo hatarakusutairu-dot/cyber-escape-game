@@ -1,4 +1,4 @@
-# CLAUDE.md - Project Context for Claude Code
+﻿# CLAUDE.md - Project Context for Claude Code
 
 ## 重要: 開発ルール
 
@@ -252,6 +252,47 @@ const updateTeamSize = (newSize) => {
 - `'【探索】クリスタルにヒントがある'` - その他役割
 
 **関連コード**: 798-822行目 `getSecretMessage()`
+
+### 脱出アニメーションがループするバグ（2026-01-18）
+
+**症状**: 
+- 脱出成功後、アニメーションが何回も繰り返し再生される
+- 「ランキングを見る」ボタンを押してもアニメーションに戻る
+- 脱出成功画面に遷移しない
+- 3Dグラフィックスが画面に残る
+
+**原因**:
+- `fetchOtherPlayers`の500msインターバルがstale closureで`gameCompleted`のfalse値を参照
+- 画面が`escaping`に遷移した後もインターバルが実行され続ける
+- React状態更新前に次のinterval tickが発生し、`setScreen('escaping')`が繰り返し呼ばれる
+
+**修正内容**:
+1. `gameCompletedRef`と`screenRef`を追加してstale closure問題を回避
+2. `fetchOtherPlayers`の先頭で`screenRef.current !== 'game'`をチェック
+3. `gameCompletedRef.current`でゲーム完了状態を確認（状態の遅延を回避）
+4. 状態更新前にrefを即座に更新して次のtickでの重複実行を防止
+
+**追加したref**:
+```javascript
+// stale closure対策用ref（interval内で最新の状態を参照するため）
+const gameCompletedRef = useRef(false);
+const screenRef = useRef('entry');
+```
+
+**関連するref同期useEffect**:
+```javascript
+useEffect(() => { gameCompletedRef.current = gameCompleted; }, [gameCompleted]);
+useEffect(() => { screenRef.current = screen; }, [screen]);
+```
+
+**修正箇所**:
+- 127-128行目: ref定義
+- 71-72行目: ref同期useEffect
+- 1312-1314行目: fetchOtherPlayersの先頭でscreenRefチェック
+- 1321-1324行目: gameCompletedRef使用＋即座にref更新
+- 1344-1345行目: setScreen前にscreenRef更新
+- 1821-1823行目: checkPuzzleAnswerでも同様にref即時更新
+- 1854-1855行目: setScreen前にscreenRef更新
 
 ## Security Notes
 
