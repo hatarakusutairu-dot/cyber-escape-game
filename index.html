@@ -1272,7 +1272,11 @@ const CyberEscapeGame = () => {
     setTeamNumber(normalizedNumber);
     const rejoinTeamSize = teamData.maxMembers || team.size || 5;
     updateTeamSize(rejoinTeamSize);
-    setRole(droppedMember.roleName);
+
+    // 役割オブジェクトを取得して設定
+    const availableRoles = getRolesForTeamSize(rejoinTeamSize);
+    const roleObj = availableRoles[droppedMember.roleIndex];
+    setRole(roleObj);
     setSelectedRole(droppedMember.roleIndex);
 
     // ヒント情報を復元
