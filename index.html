@@ -1283,11 +1283,20 @@ const CyberEscapeGame = () => {
 
   // 自分の位置をサーバーに送信（hintsUnlocked/hintsFoundを保持）
   const updateMyPosition = async () => {
+    // ゲーム完了時は位置更新を停止（completionTimeの上書き防止）
+    if (gameCompletedRef.current || isEscapingRef.current) return;
     if (!teamNumber || !myPlayerId) return;
     try {
       const team = await supabase.getTeam(teamNumber);
       if (!team) return;
       const data = team.data;
+      
+      // サーバー側でゲーム完了していたら、このクライアントも完了状態に
+      if (data.completed) {
+        console.log('updateMyPosition: サーバー側で完了検知');
+        return;  // 位置更新せず、fetchOtherPlayersに任せる
+      }
+      
       const myEntry = data.members.find(m => m.oderId === myPlayerId);
       if (myEntry) {
         const player = playerRef.current;

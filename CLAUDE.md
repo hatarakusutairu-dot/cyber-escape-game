@@ -370,6 +370,34 @@ if (localRole && localTeamSize && localTeamSize !== 5) {
 }
 ```
 
+### チームメンバー取り残し＆完了時間上書きバグ（2026-01-18）
+
+**症状**: 
+- リーダーが脱出してもチームメンバーが脱出アニメーションに遷移しない
+- 正しい完了時間がランキングに反映されない（先にクリアしたのに順位が低い）
+
+**原因**:
+`updateMyPosition`関数がゲーム完了後も500ms間隔で実行され、`completed`と`completionTime`を含まない古いデータで上書きしていた（レース条件）
+
+**修正内容**:
+1. `updateMyPosition`の先頭で`gameCompletedRef.current || isEscapingRef.current`をチェックして早期リターン
+2. サーバー側で`data.completed === true`の場合も位置更新をスキップ
+
+```javascript
+const updateMyPosition = async () => {
+  // ゲーム完了時は位置更新を停止（completionTimeの上書き防止）
+  if (gameCompletedRef.current || isEscapingRef.current) return;
+  // ...
+  // サーバー側でゲーム完了していたら、このクライアントも完了状態に
+  if (data.completed) {
+    return;  // 位置更新せず、fetchOtherPlayersに任せる
+  }
+  // ...
+};
+```
+
+**関連コード**: 1284-1320行目付近 updateMyPosition関数
+
 ## Security Notes
 
 - Supabase credentials are exposed in frontend (development only)
