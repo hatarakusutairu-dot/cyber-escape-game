@@ -382,6 +382,7 @@ if (localRole && localTeamSize && localTeamSize !== 5) {
 **修正内容**:
 1. `updateMyPosition`の先頭で`gameCompletedRef.current || isEscapingRef.current`をチェックして早期リターン
 2. サーバー側で`data.completed === true`の場合も位置更新をスキップ
+3. **保存直前に再度完了状態をチェック**（2026-01-18追加）- DBに保存する直前にもう一度getTeamして完了状態を確認。リーダーが保存した直後に非リーダーが上書きするレース条件を防ぐ
 
 ```javascript
 const updateMyPosition = async () => {
@@ -393,10 +394,16 @@ const updateMyPosition = async () => {
     return;  // 位置更新せず、fetchOtherPlayersに任せる
   }
   // ...
+  // ★ 保存直前に完了状態を再確認（レース条件対策）
+  const freshTeam = await supabase.getTeam(teamNumber);
+  if (freshTeam && freshTeam.data && freshTeam.data.completed) {
+    return;  // 位置更新をスキップして完了データを保護
+  }
+  await supabase.updateTeam(teamNumber, data);
 };
 ```
 
-**関連コード**: 1284-1320行目付近 updateMyPosition関数
+**関連コード**: 1284-1335行目付近 updateMyPosition関数
 
 ## Security Notes
 
