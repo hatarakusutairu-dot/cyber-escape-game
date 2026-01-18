@@ -1315,20 +1315,64 @@ const CyberEscapeGame = () => {
         const serverFound = (data.hintsFound || []).map(Number);
         data.hintsFound = [...new Set([...localFound, ...serverFound])];
 
-        // ★ 保存直前に完了状態を再確認（レース条件対策）
-        // リーダーが完了保存した直後に非リーダーが上書きするのを防ぐ
+        // ★★★ 強化版レース条件対策 ★★★
+        // 保存直前に最新状態を取得し、完了データがあればスキップ
+        // なければ最新データをベースに位置だけ更新して保存
         const freshTeam = await supabase.getTeam(teamNumber);
-        if (freshTeam && freshTeam.data && freshTeam.data.completed) {
-          console.log('updateMyPosition: 保存直前に完了検知、保存スキップ');
-          // 完了状態を検知したので、自分も完了状態に遷移
-          if (!gameCompletedRef.current) {
-            gameCompletedRef.current = true;
-            isEscapingRef.current = true;
+        if (freshTeam && freshTeam.data) {
+          // 完了データがあれば保存せずに終了し、画面遷移
+          if (freshTeam.data.completed) {
+            console.log('updateMyPosition: 完了データ検知、画面遷移開始');
+            if (!gameCompletedRef.current) {
+              gameCompletedRef.current = true;
+              isEscapingRef.current = true;
+              setGameCompleted(true);
+              setIsEscaping(true);
+              setCompletionTime(freshTeam.data.completionTime || 0);
+              clearGameState();
+              // ランキングを取得して画面遷移
+              try {
+                const allTeams = await supabase.getAllTeams();
+                const completedTeams = allTeams
+                  .filter(t => t.data && t.data.completed)
+                  .map(t => ({
+                    name: t.name,
+                    code: t.code,
+                    time: t.data.completionTime,
+                    size: t.data.maxMembers || t.size || 5
+                  }))
+                  .sort((a, b) => a.time - b.time);
+                setRankings(completedTeams);
+              } catch (e) { console.error('updateMyPosition rankings error:', e); }
+              // 脱出アニメーション画面へ遷移
+              screenRef.current = 'escaping';
+              setScreen('escaping');
+            }
+            return;
           }
-          return;  // 位置更新をスキップして完了データを保護
-        }
+          // 最新のfreshTeamデータをベースに位置を更新
+          const freshData = freshTeam.data;
+          const myEntry = freshData.members?.find(m => m.oderId === myPlayerId);
+          if (myEntry) {
+            const player = playerRef.current;
+            myEntry.position = {
+              x: Math.round(player.x * 100) / 100,
+              z: Math.round(player.z * 100) / 100,
+              rotation: Math.round(player.rotation * 100) / 100,
+              lastUpdate: Date.now()
+            };
+          }
+          // ヒントデータをマージ
+          const localUnlocked = (hintsUnlockedRef.current || []).map(Number);
+          const serverUnlocked = (freshData.hintsUnlocked || []).map(Number);
+          freshData.hintsUnlocked = [...new Set([...localUnlocked, ...serverUnlocked])];
+          const localFound = (hintsFoundRef.current || []).map(Number);
+          const serverFound = (freshData.hintsFound || []).map(Number);
+          freshData.hintsFound = [...new Set([...localFound, ...serverFound])];
 
-        await supabase.updateTeam(teamNumber, data);
+          // 最新データを保存
+          await supabase.updateTeam(teamNumber, freshData);
+        }
       }
     } catch (e) { console.error('updateMyPosition error:', e); }
   };
