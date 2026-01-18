@@ -294,6 +294,39 @@ useEffect(() => { screenRef.current = screen; }, [screen]);
 - 1821-1823行目: checkPuzzleAnswerでも同様にref即時更新
 - 1854-1855行目: setScreen前にscreenRef更新
 
+### 脱出成功画面で3Dグラフィックスが残るバグ（2026-01-18）
+
+**症状**: 脱出成功画面やランキング画面の後ろに3Dグラフィックスが表示される
+
+**原因**: Three.jsのcanvasがReactのアンマウント時に正しくクリーンアップされない
+
+**修正**: screen変更時にThree.jsを明示的にクリーンアップするuseEffectを追加
+```javascript
+useEffect(() => {
+  if (screen !== 'game' && rendererRef.current) {
+    rendererRef.current.dispose();
+    rendererRef.current.forceContextLoss();
+    // canvas要素も削除
+    if (rendererRef.current.domElement?.parentNode) {
+      rendererRef.current.domElement.parentNode.removeChild(rendererRef.current.domElement);
+    }
+    rendererRef.current = null;
+  }
+}, [screen]);
+```
+
+**関連コード**: 2750-2766行目付近
+
+### 最終パズルのシンボル順序が正解順になっているバグ（2026-01-18）
+
+**症状**: 最終パズルのシンボル選択肢が正解順（▲■★●◆）で表示され、順番に上げるだけでクリアできる
+
+**修正内容**:
+1. `shuffledSymbols`ステートを追加（81行目）
+2. Fisher-Yatesシャッフル関数を追加（1907-1913行目）
+3. モーダル表示時にシンボルをシャッフル（1919行目、1927行目）
+4. UIで`shuffledSymbols`を使用（3533行目）
+
 ## Security Notes
 
 - Supabase credentials are exposed in frontend (development only)

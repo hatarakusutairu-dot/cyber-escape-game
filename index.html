@@ -79,6 +79,7 @@ const CyberEscapeGame = () => {
   const [consoleReflexCleared, setConsoleReflexCleared] = useState(false);  // 中央コンソールの反射ゲームクリア済み
   const [puzzleInput, setPuzzleInput] = useState(['', '', '', '', '']);
   const [puzzleError, setPuzzleError] = useState('');
+  const [shuffledSymbols, setShuffledSymbols] = useState(['▲', '■', '★', '●', '◆']);
   const [teamSize, setTeamSize] = useState(5);
   const [gameCompleted, setGameCompleted] = useState(false);
   const [showEscapeAnimation, setShowEscapeAnimation] = useState(false);  // 脱出演出表示中
@@ -1902,10 +1903,21 @@ const CyberEscapeGame = () => {
           alert('中央コンソールはリーダーのみ操作できます。\nリーダーに操作を依頼してください。');
           return;
         }
+        // シンボルをシャッフルする関数
+        const shuffleSymbols = () => {
+          const symbols = ['▲', '■', '★', '●', '◆'];
+          for (let i = symbols.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [symbols[i], symbols[j]] = [symbols[j], symbols[i]];
+          }
+          setShuffledSymbols(symbols);
+        };
+
         // 反射ゲームをクリア済みなら直接最終パズルへ
         if (consoleReflexCleared) {
           setPuzzleInput(['', '', '', '', '']);
           setPuzzleError('');
+          shuffleSymbols();
           setShowFinalInputModal(true);
         } else {
           // 反射ゲームを開始
@@ -1914,6 +1926,7 @@ const CyberEscapeGame = () => {
             setConsoleReflexCleared(true);
             setPuzzleInput(['', '', '', '', '']);
             setPuzzleError('');
+            shuffleSymbols();
             setShowFinalInputModal(true);
           };
           const onClose = function() {};
@@ -2747,6 +2760,27 @@ const CyberEscapeGame = () => {
     }
   }, [showMessage, screen]);
 
+  // ゲーム画面から離れる時にThree.jsを明示的にクリーンアップ
+  useEffect(() => {
+    if (screen !== 'game' && rendererRef.current) {
+      console.log('Cleaning up Three.js renderer');
+      if (animationIdRef.current) {
+        cancelAnimationFrame(animationIdRef.current);
+        animationIdRef.current = null;
+      }
+      try {
+        rendererRef.current.dispose();
+        rendererRef.current.forceContextLoss();
+        if (rendererRef.current.domElement && rendererRef.current.domElement.parentNode) {
+          rendererRef.current.domElement.parentNode.removeChild(rendererRef.current.domElement);
+        }
+      } catch (e) { console.error('Three.js cleanup error:', e); }
+      rendererRef.current = null;
+      sceneRef.current = null;
+      cameraRef.current = null;
+    }
+  }, [screen]);
+
   // 脱出演出画面（3秒後に自動で完了画面へ）
   useEffect(() => {
     if (screen === 'escaping') {
@@ -3495,7 +3529,7 @@ const CyberEscapeGame = () => {
                 <div className="bg-gray-800 p-4 rounded mb-4">
                   <p className="text-gray-400 text-sm mb-2 text-center">形をドラッグしてください</p>
                   <div className="flex justify-center gap-3">
-                    {['▲', '■', '★', '●', '◆'].map((symbol) => (
+                    {shuffledSymbols.map((symbol) => (
                       <div
                         key={symbol}
                         draggable
