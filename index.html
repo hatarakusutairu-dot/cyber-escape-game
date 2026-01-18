@@ -3379,45 +3379,73 @@ const CyberEscapeGame = () => {
           </div>
         )}
 
-        {/* 最終パズル入力画面 */}
+        {/* 最終パズル入力画面（ドラッグ&ドロップ） */}
         {showFinalInputModal && (
           <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-90 z-50">
             <div className="max-w-lg w-full mx-4">
               <div className="bg-gray-900 border-2 border-green-500 rounded-lg p-6 shadow-2xl">
                 <h2 className="text-2xl font-bold mb-4 text-center text-green-400">
-                  🔓 最終認証 - 形を入力
+                  🔓 最終認証 - 形を並べる
                 </h2>
 
                 <p className="text-gray-300 text-center mb-4">
-                  チームで集めたヒントを元に、正しい順番で形を入力してください。
+                  下の形をドラッグして、正しい順番に並べてください。
                 </p>
 
+                {/* ドロップゾーン（回答欄） */}
                 <div className="bg-gray-800 p-4 rounded mb-4">
-                  <p className="text-gray-400 text-sm mb-2 text-center">使用できる形: ▲ ■ ★ ● ◆</p>
+                  <p className="text-gray-400 text-sm mb-2 text-center">回答欄（ここに形をドロップ）</p>
                   <div className="flex justify-center gap-2">
                     {puzzleInput.map((val, idx) => (
-                      <input
+                      <div
                         key={idx}
-                        type="text"
-                        value={val}
-                        onChange={(e) => {
-                          const newInput = [...puzzleInput];
-                          newInput[idx] = e.target.value;
-                          setPuzzleInput(newInput);
+                        className={`w-14 h-14 flex items-center justify-center text-3xl bg-gray-700 border-2 rounded cursor-pointer select-none ${val ? 'border-green-400' : 'border-cyan-500 border-dashed'}`}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const symbol = e.dataTransfer.getData('text/plain');
+                          if (symbol) {
+                            const newInput = [...puzzleInput];
+                            newInput[idx] = symbol;
+                            setPuzzleInput(newInput);
+                          }
                         }}
-                        className="w-12 h-12 text-center text-2xl bg-gray-700 border-2 border-cyan-500 rounded text-white focus:border-green-400 focus:outline-none"
-                        maxLength={1}
-                        placeholder={(idx + 1).toString()}
-                      />
+                        onClick={() => {
+                          if (val) {
+                            const newInput = [...puzzleInput];
+                            newInput[idx] = '';
+                            setPuzzleInput(newInput);
+                          }
+                        }}
+                        title={val ? 'クリックで削除' : `${idx + 1}番目`}
+                      >
+                        {val || <span className="text-gray-500 text-lg">{idx + 1}</span>}
+                      </div>
                     ))}
                   </div>
+                  <p className="text-gray-500 text-xs text-center mt-2">※配置した形をクリックすると削除できます</p>
                 </div>
 
-                <div className="bg-gray-800 p-3 rounded mb-4">
-                  <p className="text-xs text-gray-400 text-center">
-                    ヒント: 各形を対応する記号で入力<br/>
-                    三角=▲ 四角=■ 星=★ 丸=● ひし形=◆
-                  </p>
+                {/* ドラッグ元（形の選択肢） */}
+                <div className="bg-gray-800 p-4 rounded mb-4">
+                  <p className="text-gray-400 text-sm mb-2 text-center">形をドラッグしてください</p>
+                  <div className="flex justify-center gap-3">
+                    {['▲', '■', '★', '●', '◆'].map((symbol) => (
+                      <div
+                        key={symbol}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', symbol);
+                          e.dataTransfer.effectAllowed = 'copy';
+                        }}
+                        className="w-12 h-12 flex items-center justify-center text-3xl bg-cyan-700 hover:bg-cyan-600 border-2 border-cyan-400 rounded cursor-grab active:cursor-grabbing select-none transition"
+                        title={symbol === '▲' ? '三角' : symbol === '■' ? '四角' : symbol === '★' ? '星' : symbol === '●' ? '丸' : 'ひし形'}
+                      >
+                        {symbol}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-gray-500 text-xs text-center mt-2">三角=▲ 四角=■ 星=★ 丸=● ひし形=◆</p>
                 </div>
 
                 {puzzleError && (
@@ -3429,10 +3457,20 @@ const CyberEscapeGame = () => {
                     onClick={() => {
                       setShowFinalInputModal(false);
                       setPuzzleError('');
+                      setPuzzleInput(['', '', '', '', '']);
                     }}
                     className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded transition"
                   >
                     キャンセル
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPuzzleInput(['', '', '', '', '']);
+                      setPuzzleError('');
+                    }}
+                    className="bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 px-4 rounded transition"
+                  >
+                    リセット
                   </button>
                   <button
                     onClick={checkPuzzleAnswer}
