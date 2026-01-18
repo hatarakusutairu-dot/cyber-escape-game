@@ -1489,23 +1489,31 @@ const CyberEscapeGame = () => {
       return;
     }
 
-    // ★ 最初にDBからチームサイズを取得（最も信頼できるソース）
-    let dbTeamSize = currentTeamSize;
-    try {
-      const teamForSize = await supabase.getTeam(currentTeamNumber);
-      if (teamForSize && teamForSize.data) {
-        dbTeamSize = teamForSize.data.maxMembers || teamForSize.size || currentTeamSize;
-        console.log('collectHint: DB teamSize=' + dbTeamSize + ' (data.maxMembers=' + teamForSize.data.maxMembers + ', team.size=' + teamForSize.size + ')');
-        // React状態も更新
-        if (dbTeamSize !== teamSizeRef.current) {
-          updateTeamSize(dbTeamSize);
-        }
-      }
-    } catch (e) { console.error('collectHint: teamSize fetch error:', e); }
-
-    // ★ ファストパス: ローカル状態で判定可能なら即座に表示
+    // ★ ファストパス: ローカル状態が有効なら即座に表示（DB待ちをスキップ）
     const localRole = currentRole;
-    const localTeamSize = dbTeamSize;  // DBから取得した値を使用
+    let localTeamSize = currentTeamSize;
+    let dbTeamSize = currentTeamSize;
+    
+    // ローカルに有効なroleとteamSize（5以外）があれば、DB呼び出しをスキップ
+    if (localRole && localTeamSize && localTeamSize !== 5) {
+      console.log('collectHint: ファストパス（DB待ちスキップ） teamSize=' + localTeamSize);
+      dbTeamSize = localTeamSize;
+    } else {
+      // ローカル状態が不十分な場合のみDBから取得
+      console.log('collectHint: DB取得が必要 (localTeamSize=' + localTeamSize + ')');
+      try {
+        const teamForSize = await supabase.getTeam(currentTeamNumber);
+        if (teamForSize && teamForSize.data) {
+          dbTeamSize = teamForSize.data.maxMembers || teamForSize.size || currentTeamSize;
+          localTeamSize = dbTeamSize;
+          console.log('collectHint: DB teamSize=' + dbTeamSize);
+          if (dbTeamSize !== teamSizeRef.current) {
+            updateTeamSize(dbTeamSize);
+          }
+        }
+      } catch (e) { console.error('collectHint: teamSize fetch error:', e); }
+    }
+
     if (localRole && localTeamSize) {
       const fastPerms = getHintPermissions(localTeamSize, localRole.id);
       const fastCanSee = fastPerms.includes(numHintId);
