@@ -346,6 +346,30 @@ useEffect(() => {
 
 **ローディングUI**: 正解後すぐに「🎉 正解！脱出準備中...」と表示
 
+### クリスタル反応速度の改善（2026-01-18）
+
+**症状**: クリスタルでEキーを押してからヒント表示までが遅い
+
+**原因**: collectHintが毎回DBからのteamSize取得を待っていた
+
+**修正内容**:
+- teamSizeが有効値（5以外）の場合、DB呼び出しをスキップして即座に表示
+- teamSizeが5（デフォルト値の可能性）の場合のみDBから取得
+- これにより2〜4人チームは即座にヒント表示、5人チームはDB確認後に表示
+
+**関連コード**: 1492-1516行目付近 collectHint関数
+
+```javascript
+// ローカルに有効なroleとteamSize（5以外）があれば、DB呼び出しをスキップ
+if (localRole && localTeamSize && localTeamSize !== 5) {
+  console.log('collectHint: ファストパス（DB待ちスキップ）');
+  dbTeamSize = localTeamSize;
+} else {
+  // ローカル状態が不十分な場合のみDBから取得
+  // ... DB call
+}
+```
+
 ## Security Notes
 
 - Supabase credentials are exposed in frontend (development only)
