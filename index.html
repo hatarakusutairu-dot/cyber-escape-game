@@ -1298,7 +1298,8 @@ const CyberEscapeGame = () => {
       const data = team.data;
 
       // ゲーム完了状態をチェック（リーダー以外のメンバー用）
-      if (data.completed && !gameCompleted && screen === 'game') {
+      if (data.completed && !gameCompleted) {
+        console.log('ゲーム完了を検知！ 完了画面へ遷移します');
         setGameCompleted(true);
         setCompletionTime(data.completionTime || 0);
         clearGameState();
@@ -1316,8 +1317,8 @@ const CyberEscapeGame = () => {
             .sort((a, b) => a.time - b.time);
           setRankings(completedTeams);
         } catch (e) { console.error('fetchRankings error:', e); }
-        setShowEscapeAnimation(true);
-        setScreen('escaping');
+        // 直接complete画面へ（escaping画面をスキップ）
+        setScreen('complete');
         return;
       }
 
@@ -1702,9 +1703,8 @@ const CyberEscapeGame = () => {
         setRankings(completedTeams);
       } catch (e) { console.error('fetchRankings error:', e); }
 
-      // 脱出演出を表示
-      setShowEscapeAnimation(true);
-      setScreen('escaping');
+      // 直接完了画面へ遷移
+      setScreen('complete');
     } else {
       setPuzzleError('不正解です。ヒントを確認して再度入力してください。');
     }
