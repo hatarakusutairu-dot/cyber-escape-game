@@ -1021,8 +1021,11 @@ const CyberEscapeGame = () => {
       try {
         console.log('getTeam: 検索コード:', code);
         const res = await fetch(
-          SUPABASE_URL + '/rest/v1/teams?code=eq.' + code + '&select=*',
-          { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY } }
+          SUPABASE_URL + '/rest/v1/teams?code=eq.' + code + '&select=*&_t=' + Date.now(),
+          {
+            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Cache-Control': 'no-cache' },
+            cache: 'no-store'
+          }
         );
         console.log('getTeam: HTTPステータス:', res.status);
         const data = await res.json();
@@ -1076,8 +1079,11 @@ const CyberEscapeGame = () => {
     async getAllTeams() {
       try {
         const res = await fetch(
-          SUPABASE_URL + '/rest/v1/teams?select=*&order=created_at.desc',
-          { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY } }
+          SUPABASE_URL + '/rest/v1/teams?select=*&order=created_at.desc&_t=' + Date.now(),
+          {
+            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Cache-Control': 'no-cache' },
+            cache: 'no-store'
+          }
         );
         return await res.json();
       } catch (e) { console.error('getAllTeams error:', e); return []; }
@@ -1506,6 +1512,24 @@ const CyberEscapeGame = () => {
           const localFound = (hintsFoundRef.current || []).map(Number);
           const serverFound = (freshData.hintsFound || []).map(Number);
           freshData.hintsFound = [...new Set([...localFound, ...serverFound])];
+
+          // ★★★ 最終チェック: 保存直前にもう一度完了状態を確認 ★★★
+          // リーダーが今まさに保存した可能性があるため
+          const finalCheck = await supabase.getTeam(teamNumber);
+          if (finalCheck && finalCheck.data && finalCheck.data.completed) {
+            console.log('updateMyPosition: 最終チェックで完了検知、保存中止');
+            if (!gameCompletedRef.current) {
+              gameCompletedRef.current = true;
+              isEscapingRef.current = true;
+              setGameCompleted(true);
+              setIsEscaping(true);
+              setCompletionTime(finalCheck.data.completionTime || 0);
+              clearGameState();
+              screenRef.current = 'escaping';
+              setScreen('escaping');
+            }
+            return; // 絶対に保存しない
+          }
 
           // 最新データを保存
           await supabase.updateTeam(teamNumber, freshData);
