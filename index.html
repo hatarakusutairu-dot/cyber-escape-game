@@ -4043,52 +4043,8 @@ const CyberEscapeGame = () => {
                       {formatTime(completionTime || 0)}
                     </p>
                   </div>
-                  {myRank > 0 && (
-                    <div>
-                      <p className="text-gray-400 text-sm mb-1">順位</p>
-                      <p className="text-3xl font-bold text-yellow-400">
-                        {myRank === 1 ? '🥇' : myRank === 2 ? '🥈' : myRank === 3 ? '🥉' : ''} {myRank}位
-                      </p>
-                    </div>
-                  )}
                 </div>
               </div>
-
-              {/* ランキング表示 */}
-              {rankings.length > 0 && (
-                <div className="mb-6">
-                  <h2 className="text-xl font-bold text-cyan-400 mb-3 text-center">🏆 ランキング</h2>
-                  <div className="bg-gray-900 rounded-lg border border-cyan-500 overflow-hidden max-h-60 overflow-y-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-700 sticky top-0">
-                        <tr>
-                          <th className="py-2 px-3 text-left text-gray-300 text-sm">順位</th>
-                          <th className="py-2 px-3 text-left text-gray-300 text-sm">チーム名</th>
-                          <th className="py-2 px-3 text-right text-gray-300 text-sm">タイム</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rankings.map((team, idx) => (
-                          <tr
-                            key={team.code}
-                            className={`${team.code === teamNumber ? 'bg-cyan-900 bg-opacity-50' : idx % 2 === 0 ? 'bg-gray-800' : 'bg-gray-850'}`}
-                          >
-                            <td className="py-2 px-3 text-white font-bold">
-                              {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : ''} {idx + 1}
-                            </td>
-                            <td className={`py-2 px-3 ${team.code === teamNumber ? 'text-cyan-300 font-bold' : 'text-white'}`}>
-                              {team.name} {team.code === teamNumber && '(あなた)'}
-                            </td>
-                            <td className="py-2 px-3 text-right text-green-400 font-mono">
-                              {formatTime(team.time)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
             </>
           ) : (
             <>

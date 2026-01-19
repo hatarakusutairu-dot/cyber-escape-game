@@ -30,7 +30,7 @@ CLAUDE.md     - このファイル
 
 ### Game Flow
 ```
-entry → waiting → lobby → game → complete
+entry → waiting → lobby → game → escaping → complete
 ```
 
 ### Core Components (in index.html)
@@ -463,6 +463,33 @@ const droppedMember = teamData.members?.find(m => {
 ```
 
 **関連コード**: 1211-1305行目付近 handleRejoinTeam関数
+
+### ランキング表示削除（2026-01-19）
+
+**目的**: ランキング機能の安定性問題により、脱出成功画面をシンプル化
+
+**背景**:
+- 複数クライアント間のレース条件
+- DBの一貫性問題
+- 4人チームでの完了時間反映問題
+
+**削除した機能**:
+1. 順位表示（myRank）
+2. ランキングテーブル（rankings.map）
+
+**残した機能**:
+- チーム名表示
+- クリアタイム表示
+
+**修正内容**: 完了画面から以下を削除
+```jsx
+{myRank > 0 && (
+  <div>順位: {myRank}位</div>
+)}
+{rankings.length > 0 && (
+  <div>ランキングテーブル...</div>
+)}
+```
 
 ## Security Notes
 
