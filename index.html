@@ -1531,8 +1531,29 @@ const CyberEscapeGame = () => {
             return; // 絶対に保存しない
           }
 
+          // ★★★ 重要: finalCheckのデータをベースに位置を更新して保存 ★★★
+          // freshDataではなくfinalCheck.dataを使う（最新のデータを上書きしないため）
+          const finalData = finalCheck.data;
+          const finalEntry = finalData.members?.find(m => m.oderId === myPlayerId);
+          if (finalEntry) {
+            const player = playerRef.current;
+            finalEntry.position = {
+              x: Math.round(player.x * 100) / 100,
+              z: Math.round(player.z * 100) / 100,
+              rotation: Math.round(player.rotation * 100) / 100,
+              lastUpdate: Date.now()
+            };
+          }
+          // ヒントデータをマージ
+          const finalLocalUnlocked = (hintsUnlockedRef.current || []).map(Number);
+          const finalServerUnlocked = (finalData.hintsUnlocked || []).map(Number);
+          finalData.hintsUnlocked = [...new Set([...finalLocalUnlocked, ...finalServerUnlocked])];
+          const finalLocalFound = (hintsFoundRef.current || []).map(Number);
+          const finalServerFound = (finalData.hintsFound || []).map(Number);
+          finalData.hintsFound = [...new Set([...finalLocalFound, ...finalServerFound])];
+
           // 最新データを保存
-          await supabase.updateTeam(teamNumber, freshData);
+          await supabase.updateTeam(teamNumber, finalData);
         }
       }
     } catch (e) { console.error('updateMyPosition error:', e); }
