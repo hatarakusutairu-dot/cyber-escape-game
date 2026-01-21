@@ -1545,6 +1545,24 @@ const CyberEscapeGame = () => {
           // ★★★ 重要: finalCheckのデータをベースに位置を更新して保存 ★★★
           // freshDataではなくfinalCheck.dataを使う（最新のデータを上書きしないため）
           const finalData = finalCheck.data;
+
+          // ★★★ 完了データがあれば絶対に保存しない ★★★
+          // この時点で完了していたら、位置更新は不要
+          if (finalData.completed) {
+            console.log('updateMyPosition: finalDataに完了フラグあり、画面遷移');
+            if (!gameCompletedRef.current) {
+              gameCompletedRef.current = true;
+              isEscapingRef.current = true;
+              setGameCompleted(true);
+              setIsEscaping(true);
+              setCompletionTime(finalData.completionTime || 0);
+              clearGameState();
+              screenRef.current = 'escaping';
+              setScreen('escaping');
+            }
+            return;
+          }
+
           const finalEntry = finalData.members?.find(m => m.oderId === myPlayerId);
           if (finalEntry) {
             const player = playerRef.current;
@@ -1565,6 +1583,22 @@ const CyberEscapeGame = () => {
 
           // 最新データを保存
           await supabase.updateTeam(teamNumber, finalData);
+
+          // ★★★ 保存後に再度完了チェック（リーダーが直後に保存した場合のため）★★★
+          const postSaveCheck = await supabase.getTeam(teamNumber);
+          if (postSaveCheck && postSaveCheck.data && postSaveCheck.data.completed) {
+            console.log('updateMyPosition: 保存後に完了検知、画面遷移');
+            if (!gameCompletedRef.current) {
+              gameCompletedRef.current = true;
+              isEscapingRef.current = true;
+              setGameCompleted(true);
+              setIsEscaping(true);
+              setCompletionTime(postSaveCheck.data.completionTime || 0);
+              clearGameState();
+              screenRef.current = 'escaping';
+              setScreen('escaping');
+            }
+          }
         }
       }
     } catch (e) { console.error('updateMyPosition error:', e); }
