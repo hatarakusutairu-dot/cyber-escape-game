@@ -2930,12 +2930,16 @@ const CyberEscapeGame = () => {
         player.z -= Math.sin(player.rotation) * speed;
       }
 
-      // 境界制限
+      // 境界制限（壁スライディング対応）
+      const boundaryRadius = 15;
       const distFromCenter = Math.sqrt(player.x * player.x + player.z * player.z);
-      if (distFromCenter > 15) {
+      if (distFromCenter > boundaryRadius) {
+        // 境界を超えた場合、少し内側に押し戻す（14.5に）
+        // これにより境界ぴったりで動けなくなるバグを防止
+        const pushBackRadius = boundaryRadius - 0.5;
         const angle = Math.atan2(player.z, player.x);
-        player.x = Math.cos(angle) * 15;
-        player.z = Math.sin(angle) * 15;
+        player.x = Math.cos(angle) * pushBackRadius;
+        player.z = Math.sin(angle) * pushBackRadius;
       }
 
       // 近くのオブジェクト検出
