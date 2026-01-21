@@ -1426,8 +1426,19 @@ const CyberEscapeGame = () => {
 
   // 自分の位置をサーバーに送信（hintsUnlocked/hintsFoundを保持）
   const updateMyPosition = async () => {
-    // ゲーム完了時は位置更新を停止（completionTimeの上書き防止）
-    if (gameCompletedRef.current || isEscapingRef.current) return;
+    // ★ 最初に完了状態を厳密にチェック
+    if (gameCompletedRef.current) {
+      console.log('updateMyPosition: gameCompletedRef=true, スキップ');
+      return;
+    }
+    if (isEscapingRef.current) {
+      console.log('updateMyPosition: isEscapingRef=true, スキップ');
+      return;
+    }
+    if (screenRef.current !== 'game') {
+      console.log('updateMyPosition: screen=' + screenRef.current + ', スキップ');
+      return;
+    }
     if (!teamNumber || !myPlayerId) return;
     try {
       const team = await supabase.getTeam(teamNumber);
@@ -1646,6 +1657,31 @@ const CyberEscapeGame = () => {
         }
       });
     } catch (e) { console.error('fetchOtherPlayers error:', e); }
+  };
+
+  // ★★★ 専用完了検知（200ms間隔、非常にシンプル）★★★
+  const checkCompletionOnly = async () => {
+    // 既に完了検知済みなら何もしない
+    if (gameCompletedRef.current || isEscapingRef.current) return;
+    if (screenRef.current !== 'game') return;
+    if (!teamNumber) return;
+
+    try {
+      const team = await supabase.getTeam(teamNumber);
+      if (team && team.data && team.data.completed) {
+        console.log('★★★ checkCompletionOnly: 完了検知！画面遷移開始 ★★★');
+        // 即座にフラグを立てる（他の処理をブロック）
+        gameCompletedRef.current = true;
+        isEscapingRef.current = true;
+        screenRef.current = 'escaping';
+
+        setGameCompleted(true);
+        setIsEscaping(true);
+        setCompletionTime(team.data.completionTime || 0);
+        clearGameState();
+        setScreen('escaping');
+      }
+    } catch (e) { console.error('checkCompletionOnly error:', e); }
   };
 
   // 人数別：誰がどのヒントを見れるか
@@ -3081,6 +3117,13 @@ const CyberEscapeGame = () => {
     const interval = setInterval(fetchOtherPlayers, 500);
     return () => clearInterval(interval);
   }, [screen, myPlayerId, teamNumber]);
+
+  // ★★★ 専用完了検知（200ms間隔、高頻度でチェック）★★★
+  useEffect(() => {
+    if (screen !== 'game' || !teamNumber) return;
+    const interval = setInterval(checkCompletionOnly, 200);
+    return () => clearInterval(interval);
+  }, [screen, teamNumber]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
